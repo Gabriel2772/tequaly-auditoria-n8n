@@ -1,0 +1,197 @@
+{
+  "name": "WF99 - Tratar erros dos workflows de auditoria",
+  "nodes": [
+    {
+      "id": "81bd81d7-9d1c-46fe-bc2f-db083558c7bc",
+      "name": "Sticky Note b4a93863",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        240,
+        -80
+      ],
+      "parameters": {
+        "content": "### WF99 — Tratar erros dos workflows de auditoria\nWorkflow de erro global de WF10, WF20, WF30 e WF40. Pega falhas que escapam do tratamento por nó (crash, timeout, nó sem saída de erro).\n\nGrava sempre em `erro_log` e manda e-mail, no máximo um por hora para o mesmo erro (mesmo workflow + nó + mensagem).",
+        "color": 3,
+        "width": 520,
+        "height": 240
+      }
+    },
+    {
+      "id": "1a0756ea-ad3c-4c34-a750-37b9b507d6b5",
+      "name": "Erro em workflow",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "b214429a-4871-4ce4-90ed-4b0761d7ad85",
+      "name": "Alertar agora?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        672,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $('Registrar erro').item.json.alertado }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "46d5210a-24d7-4e90-a613-b37a5743ce24",
+      "name": "Alertar por e-mail",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        896,
+        0
+      ],
+      "parameters": {
+        "operation": "send",
+        "fromEmail": "n8n Auditoria <auditoria@suaempresa.com.br>",
+        "toEmail": "auditoria@suaempresa.com.br",
+        "subject": "=[n8n · ERRO] {{ $('Erro em workflow').first().json.workflow?.name }} — {{ $('Erro em workflow').first().json.execution?.lastNodeExecuted ?? 'nó desconhecido' }}",
+        "emailFormat": "text",
+        "text": "=Workflow: {{ $('Erro em workflow').first().json.workflow?.name }} ({{ $('Erro em workflow').first().json.workflow?.id }})\nNó que falhou: {{ $('Erro em workflow').first().json.execution?.lastNodeExecuted ?? '-' }}\nErro: {{ $('Erro em workflow').first().json.execution?.error?.message ?? '-' }}\n{{ $('Erro em workflow').first().json.execution?.error?.description ? 'Detalhe: ' + $('Erro em workflow').first().json.execution.error.description + '\\n' : '' }}Quando: {{ $now.setZone('America/Sao_Paulo').toFormat('dd/MM/yyyy HH:mm:ss') }}\nModo: {{ $('Erro em workflow').first().json.execution?.mode ?? '-' }}\n\nAbrir execução: {{ $('Erro em workflow').first().json.execution?.url ?? '(sem link: execução não salva)' }}\nAbrir workflow: {{ String($('Erro em workflow').first().json.execution?.url ?? '').split('/executions/')[0] || '-' }}\n\nErros iguais na próxima hora ficam só em erro_log (sem novo e-mail).",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "notes": "Falha no e-mail não derruba este workflow: o erro já está em erro_log.",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput",
+      "webhookId": "694e8339-3c65-41d5-8186-7987416e6761",
+      "disabled": true
+    },
+    {
+      "id": "5d70d25b-1b35-43dd-b109-228a8ce4b19b",
+      "name": "Buscar erro igual recente",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        224,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {
+          "largeNumbersOutput": "numbers",
+          "queryReplacement": "={{ [ [$('Erro em workflow').first().json.workflow?.id, $('Erro em workflow').first().json.execution?.lastNodeExecuted, String($('Erro em workflow').first().json.execution?.error?.message ?? '').slice(0, 120)].join('|') ] }}"
+        },
+        "query": "SELECT id\nFROM auditoria.erro_log\nWHERE assinatura = $1 AND created_at >= now() - interval '60 minutes'\nORDER BY id DESC\nLIMIT 1;"
+      },
+      "notes": "Mesmo workflow + nó + mensagem na última hora = não manda outro e-mail.",
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "id": "f18396ea-0203-45b2-8709-5444a3f88b27",
+      "name": "Registrar erro",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        448,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {
+          "largeNumbersOutput": "numbers",
+          "queryReplacement": "={{ [ $('Erro em workflow').first().json.workflow?.id ?? '', $('Erro em workflow').first().json.workflow?.name ?? '', String($('Erro em workflow').first().json.execution?.id ?? ''), $('Erro em workflow').first().json.execution?.url ?? '', $('Erro em workflow').first().json.execution?.lastNodeExecuted ?? '', String($('Erro em workflow').first().json.execution?.error?.message ?? '').slice(0, 500), String($('Erro em workflow').first().json.execution?.error?.description ?? '').slice(0, 500), $('Erro em workflow').first().json.execution?.mode ?? '', [$('Erro em workflow').first().json.workflow?.id, $('Erro em workflow').first().json.execution?.lastNodeExecuted, String($('Erro em workflow').first().json.execution?.error?.message ?? '').slice(0, 120)].join('|'), !$('Buscar erro igual recente').first().json.id ] }}"
+        },
+        "query": "INSERT INTO auditoria.erro_log\n  (workflow_id, workflow_nome, execucao_id, execucao_url, no_falhou, mensagem, descricao, modo, assinatura, alertado)\nVALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::boolean)\nRETURNING id, alertado;"
+      },
+      "notes": "Gravado antes do e-mail: se o alerta falhar, o erro continua registrado.",
+      "executeOnce": true
+    }
+  ],
+  "connections": {
+    "Alertar agora?": {
+      "main": [
+        [
+          {
+            "node": "Alertar por e-mail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Erro em workflow": {
+      "main": [
+        [
+          {
+            "node": "Buscar erro igual recente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar erro igual recente": {
+      "main": [
+        [
+          {
+            "node": "Registrar erro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar erro": {
+      "main": [
+        [
+          {
+            "node": "Alertar agora?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo"
+  },
+  "pinData": {},
+  "tags": [
+    {
+      "name": "auditoria"
+    },
+    {
+      "name": "error-workflow"
+    }
+  ],
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "description": "Error workflow global de WF10-WF40: grava toda falha não tratada em erro_log e alerta por e-mail com links da execução e do workflow, no máximo 1 e-mail/hora por mesmo workflow+nó+mensagem."
+}
