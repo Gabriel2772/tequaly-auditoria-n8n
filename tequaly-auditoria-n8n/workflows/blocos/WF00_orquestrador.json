@@ -1,0 +1,557 @@
+{
+  "name": "WF00 - Orquestrar pipeline de auditoria",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "### WF00 — Orquestrador da automação de auditoria\n06:00 todo dia (ou pelo formulário):\n1. **WF10** valida as chaves das fontes\n2. **WF20** extrai, valida (DQ) e carrega cada endpoint ativo no PostgreSQL\n3. **WF30** calcula KPIs em SQL e gera a narrativa validada\n4. **WF40** gera o dashboard único (PDF) e envia por e-mail\n\nBanco: schema `auditoria` (PostgreSQL, credencial \"Postgres Auditoria\"). Falhas não tratadas vão para o **WF99**. Cada execução fica em `auditoria.pipeline_log`.",
+        "height": 320,
+        "width": 520,
+        "color": 7
+      },
+      "id": "960b9c69-3a73-47c5-9c05-32de9b902b86",
+      "name": "Sticky Note c5f33bde",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        704,
+        -208
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 6
+            }
+          ]
+        }
+      },
+      "id": "673fe39b-9bdb-4941-8987-aef2ac22f158",
+      "name": "Agendamento diário 06:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "n1",
+              "name": "origem",
+              "type": "string",
+              "value": "={{ $json.formMode ? 'formulario' : 'agendamento' }}"
+            },
+            {
+              "id": "n2",
+              "name": "periodoInicio",
+              "type": "string",
+              "value": "={{ $json.periodoInicio ?? '' }}"
+            },
+            {
+              "id": "n3",
+              "name": "periodoFim",
+              "type": "string",
+              "value": "={{ $json.periodoFim ?? '' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a7e9eb63-56c2-4695-83ee-88c8cc4cad2b",
+      "name": "Normalizar entrada",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        224,
+        96
+      ],
+      "notes": "Os dois gatilhos viram o mesmo formato. Datas vazias seguem vazias: o WF30 aplica o padrão de 30 dias."
+    },
+    {
+      "parameters": {
+        "formTitle": "Rodar pipeline de auditoria",
+        "formDescription": "Valida chaves, extrai dados, calcula KPIs e envia o relatório. Datas em branco = últimos 30 dias.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "periodoInicio",
+              "fieldType": "date"
+            },
+            {
+              "fieldLabel": "periodoFim",
+              "fieldType": "date"
+            }
+          ]
+        },
+        "options": {
+          "respondWithOptions": {
+            "values": {
+              "formSubmittedText": "Pipeline iniciado. Acompanhe em pipeline_log."
+            }
+          }
+        }
+      },
+      "id": "84dfd716-1084-4d10-b460-43449459e983",
+      "name": "Rodar pipeline manualmente",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [
+        0,
+        192
+      ],
+      "webhookId": "92568bbe-de4c-4cf3-831a-7adb90946f34"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "DRJgzvtmM7n8UpNz",
+          "cachedResultName": "WF10 - Validar chaves das fontes"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "attemptToConvertTypes": false,
+          "value": {
+            "fonteNome": "={{ '' }}"
+          },
+          "schema": [
+            {
+              "id": "fonteNome",
+              "displayName": "fonteNome",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "5826a087-075e-471c-b984-53e0f603e54a",
+      "name": "Validar chaves (WF10)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.4,
+      "position": [
+        448,
+        96
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "notes": "Etapa 1: valida a chave de todas as fontes ativas. Devolve as fontes VALIDA (ou item vazio se nenhuma)."
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "kt3byL4QJyPizUdj",
+          "cachedResultName": "WF20 - Extrair, carregar e validar endpoint"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "attemptToConvertTypes": false,
+          "value": {
+            "endpointId": "={{ $json.id }}"
+          },
+          "schema": [
+            {
+              "id": "endpointId",
+              "displayName": "endpointId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "24ebba57-af7a-49ed-99e1-4ee0049e070a",
+      "name": "Extrair e carregar (WF20)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.4,
+      "position": [
+        896,
+        96
+      ],
+      "alwaysOutputData": true,
+      "notes": "Etapa 2: uma execução do WF20 por endpoint (isola o DQ de cada lote). Cada uma devolve sua linha de carga_log."
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "McJP3eTQx9nU7BDe",
+          "cachedResultName": "WF30 - Calcular KPIs e gerar narrativa"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "attemptToConvertTypes": false,
+          "value": {
+            "periodoInicio": "={{ $('Normalizar entrada').first().json.periodoInicio }}",
+            "periodoFim": "={{ $('Normalizar entrada').first().json.periodoFim }}"
+          },
+          "schema": [
+            {
+              "id": "periodoInicio",
+              "displayName": "periodoInicio",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "periodoFim",
+              "displayName": "periodoFim",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "b286f7cf-6439-4aa1-bb2e-2990647b036c",
+      "name": "Calcular KPIs (WF30)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.4,
+      "position": [
+        1120,
+        96
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "notes": "Etapa 3: KPIs sobre todo o staging (inclui cargas anteriores) + narrativa validada. Roda mesmo se alguma carga falhou: o relatório reflete o último dado aprovado."
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "vHBSQzT66EBNFY4n",
+          "cachedResultName": "WF40 - Gerar e enviar dashboard por e-mail"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "attemptToConvertTypes": false,
+          "value": {
+            "snapshotId": "={{ $('Calcular KPIs (WF30)').first().json.snapshotId }}"
+          },
+          "schema": [
+            {
+              "id": "snapshotId",
+              "displayName": "snapshotId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "df7b6bb6-fc20-484d-bbbc-e9ed48b3a7a3",
+      "name": "Distribuir relatório (WF40)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.4,
+      "position": [
+        1344,
+        96
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "notes": "Etapa 4: renderiza por perfil e envia e-mail/WhatsApp do snapshot recém-criado."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c1",
+              "name": "origem",
+              "type": "string",
+              "value": "={{ $('Normalizar entrada').first().json.origem }}"
+            },
+            {
+              "id": "c2",
+              "name": "periodoInicio",
+              "type": "string",
+              "value": "={{ $('Calcular KPIs (WF30)').first().json.periodoInicio ?? $('Normalizar entrada').first().json.periodoInicio }}"
+            },
+            {
+              "id": "c3",
+              "name": "periodoFim",
+              "type": "string",
+              "value": "={{ $('Calcular KPIs (WF30)').first().json.periodoFim ?? $('Normalizar entrada').first().json.periodoFim }}"
+            },
+            {
+              "id": "c4",
+              "name": "fontesAptas",
+              "type": "number",
+              "value": "={{ $('Validar chaves (WF10)').all().filter(i => i.json.id).length }}"
+            },
+            {
+              "id": "c5",
+              "name": "endpoints",
+              "type": "number",
+              "value": "={{ $('Listar endpoints ativos').all().filter(i => i.json.id).length }}"
+            },
+            {
+              "id": "c6",
+              "name": "cargasAprovadas",
+              "type": "number",
+              "value": "={{ $('Extrair e carregar (WF20)').all().filter(i => ['APROVADA', 'SEM_NOVOS'].includes(i.json.status)).length }}"
+            },
+            {
+              "id": "c7",
+              "name": "cargasComProblema",
+              "type": "number",
+              "value": "={{ $('Extrair e carregar (WF20)').all().filter(i => ['BLOQUEADA', 'ERRO', 'PULADA'].includes(i.json.status)).length }}"
+            },
+            {
+              "id": "c8",
+              "name": "snapshotId",
+              "type": "number",
+              "value": "={{ $('Calcular KPIs (WF30)').first().json.snapshotId ?? null }}"
+            },
+            {
+              "id": "c9",
+              "name": "narrativaValida",
+              "type": "boolean",
+              "value": "={{ $('Calcular KPIs (WF30)').first().json.narrativaValida === true }}"
+            },
+            {
+              "id": "c10",
+              "name": "enviosOk",
+              "type": "number",
+              "value": "={{ $('Distribuir relatório (WF40)').all().filter(i => i.json.status === 'ENVIADO').length }}"
+            },
+            {
+              "id": "c11",
+              "name": "enviosFalha",
+              "type": "number",
+              "value": "={{ $('Distribuir relatório (WF40)').all().filter(i => i.json.status === 'FALHA').length }}"
+            },
+            {
+              "id": "c12",
+              "name": "status",
+              "type": "string",
+              "value": "={{ (() => {\n  const aptas = $('Validar chaves (WF10)').all().filter(i => i.json.id).length\n  const problemas = $('Extrair e carregar (WF20)').all().filter(i => ['BLOQUEADA', 'ERRO', 'PULADA'].includes(i.json.status)).length\n  const falhas = $('Distribuir relatório (WF40)').all().filter(i => i.json.status === 'FALHA').length\n  if (!aptas) return 'SEM_FONTES'\n  return problemas || falhas ? 'PARCIAL' : 'OK'\n})() }}"
+            },
+            {
+              "id": "c13",
+              "name": "resumo",
+              "type": "string",
+              "value": "={{ (() => {\n  // Uma linha por carga + narrativa + envio, para leitura rápida no log\n  const cargas = $('Extrair e carregar (WF20)').all().filter(i => i.json.status)\n    .map(i => (i.json.entidade || '?') + ': ' + i.json.status + (i.json.status === 'APROVADA' ? ' (' + i.json.aprovados + ' reg.)' : ' - ' + String(i.json.motivo || '').slice(0, 80)))\n  const narrativa = 'Narrativa: ' + ($('Calcular KPIs (WF30)').first().json.motivoNarrativa ?? 'não executada')\n  const envios = $('Distribuir relatório (WF40)').all().filter(i => i.json.status).map(i => 'e-mail (' + i.json.qtdDestinatarios + ' destinatário(s)): ' + i.json.status)\n  return [...cargas, narrativa, ...(envios.length ? envios : ['Envio: nenhum novo (já enviado ou sem destinatário)'])].join(' | ').slice(0, 1000)\n})() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "9a9328f4-a864-42ad-96a1-3fc320897934",
+      "name": "Consolidar execução",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1568,
+        96
+      ],
+      "executeOnce": true,
+      "notes": "Resumo de ponta a ponta para pipeline_log: OK, PARCIAL (alguma carga ou envio com problema) ou SEM_FONTES."
+    },
+    {
+      "id": "0dcd32a9-c840-4a0a-bb05-d75d80eedc30",
+      "name": "Listar endpoints ativos",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        672,
+        96
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {
+          "largeNumbersOutput": "numbers"
+        },
+        "query": "SELECT id, entidade, fonte_nome AS \"fonteNome\"\nFROM auditoria.endpoints_extracao\nWHERE ativo\nORDER BY id;"
+      },
+      "notes": "Todos os endpoints ativos vão para o WF20; endpoint de fonte não VALIDA vira PULADA com o motivo.",
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "id": "7162dd50-60e1-4b39-a3f3-91e293edc36a",
+      "name": "Registrar execução do pipeline",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1792,
+        96
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {
+          "largeNumbersOutput": "numbers",
+          "queryReplacement": "={{ [ $json.origem, $json.periodoInicio ?? '', $json.periodoFim ?? '', $json.fontesAptas, $json.endpoints, $json.cargasAprovadas, $json.cargasComProblema, $json.snapshotId ?? '', $json.narrativaValida, $json.enviosOk, $json.enviosFalha, $json.status, $json.resumo ] }}"
+        },
+        "query": "INSERT INTO auditoria.pipeline_log\n  (origem, periodo_inicio, periodo_fim, fontes_aptas, endpoints, cargas_aprovadas, cargas_com_problema,\n   snapshot_id, narrativa_valida, envios_ok, envios_falha, status, resumo)\nVALUES ($1, NULLIF($2::text, '')::date, NULLIF($3::text, '')::date, $4::int, $5::int, $6::int, $7::int,\n        NULLIF($8::text, '')::bigint, $9::boolean, $10::int, $11::int, $12, $13)\nRETURNING id;"
+      }
+    }
+  ],
+  "connections": {
+    "Agendamento diário 06:00": {
+      "main": [
+        [
+          {
+            "node": "Normalizar entrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar entrada": {
+      "main": [
+        [
+          {
+            "node": "Validar chaves (WF10)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rodar pipeline manualmente": {
+      "main": [
+        [
+          {
+            "node": "Normalizar entrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extrair e carregar (WF20)": {
+      "main": [
+        [
+          {
+            "node": "Calcular KPIs (WF30)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calcular KPIs (WF30)": {
+      "main": [
+        [
+          {
+            "node": "Distribuir relatório (WF40)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Distribuir relatório (WF40)": {
+      "main": [
+        [
+          {
+            "node": "Consolidar execução",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar chaves (WF10)": {
+      "main": [
+        [
+          {
+            "node": "Listar endpoints ativos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Listar endpoints ativos": {
+      "main": [
+        [
+          {
+            "node": "Extrair e carregar (WF20)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consolidar execução": {
+      "main": [
+        [
+          {
+            "node": "Registrar execução do pipeline",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo",
+    "saveDataErrorExecution": "all",
+    "binaryMode": "separate"
+  },
+  "pinData": {},
+  "tags": [
+    {
+      "name": "auditoria"
+    },
+    {
+      "name": "orquestrador"
+    }
+  ],
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "description": "Orquestrador diário (06:00 ou formulário): WF10 valida chaves, WF20 extrai/carrega cada endpoint, WF30 calcula KPIs + narrativa, WF40 distribui relatório; resumo em pipeline_log, falhas para WF99.",
+  "nodeGroups": [
+    {
+      "id": "28d15cb8-7e70-4e83-9f63-13822aec1901",
+      "name": "Resultado da execução",
+      "nodeNames": [
+        "Consolidar execução"
+      ],
+      "description": "Consolida cargas, narrativa e envios em pipeline_log."
+    }
+  ]
+}

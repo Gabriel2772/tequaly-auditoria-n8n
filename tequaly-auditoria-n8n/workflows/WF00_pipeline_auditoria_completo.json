@@ -1,0 +1,1820 @@
+{
+  "name": "WF00 - Pipeline de auditoria (canvas completo)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Pipeline de auditoria — canvas único\n06:00 todo dia ou pelo formulário.\n\n① valida chaves → ② extrai, aplica DQ e carrega → ③ KPIs em SQL + narrativa Claude → ④ dashboard único em PDF por e-mail → ⑤ `pipeline_log`.\n\nBanco: PostgreSQL, schema `auditoria` (credencial \"Postgres Auditoria\" em todos os nós Postgres). A extração por endpoint segue isolada no WF20.",
+        "height": 380,
+        "width": 400,
+        "color": 7
+      },
+      "id": "c453375f-fc6c-4ab6-b547-ea5b50446714",
+      "name": "Sticky Note 1a9a5add",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -80,
+        688
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 6
+            }
+          ]
+        }
+      },
+      "id": "96cf1d30-ed6e-47d5-9f92-539c0491dda9",
+      "name": "Agendamento diário 06:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "n1",
+              "name": "origem",
+              "type": "string",
+              "value": "={{ $json.formMode ? 'formulario' : 'agendamento' }}"
+            },
+            {
+              "id": "n2",
+              "name": "periodoInicio",
+              "type": "string",
+              "value": "={{ $json.periodoInicio ?? '' }}"
+            },
+            {
+              "id": "n3",
+              "name": "periodoFim",
+              "type": "string",
+              "value": "={{ $json.periodoFim ?? '' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c8fe0f6d-b316-4d58-8703-90ea39cdc648",
+      "name": "Normalizar entrada",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        192,
+        400
+      ],
+      "notes": "Os dois gatilhos viram o mesmo formato. Datas vazias seguem vazias: a etapa 3 aplica o padrão de 30 dias."
+    },
+    {
+      "parameters": {
+        "formTitle": "Rodar pipeline de auditoria",
+        "formDescription": "Valida chaves, extrai dados, calcula KPIs e envia o relatório. Datas em branco = últimos 30 dias.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "periodoInicio",
+              "fieldType": "date"
+            },
+            {
+              "fieldLabel": "periodoFim",
+              "fieldType": "date"
+            }
+          ]
+        },
+        "options": {
+          "respondWithOptions": {
+            "values": {
+              "formSubmittedText": "Pipeline iniciado. Acompanhe em pipeline_log."
+            }
+          }
+        }
+      },
+      "id": "7774f1f2-8c44-4d52-bff1-05c47ef264a8",
+      "name": "Rodar pipeline manualmente",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [
+        0,
+        512
+      ],
+      "webhookId": "aad72315-6aa4-4b5c-a88d-8eac97b892f7"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.baseUrl }}{{ $json.endpointTeste }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "id": "13639bcb-9d4d-43aa-9e43-20d16878fcf5",
+      "name": "Testar Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        192
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.tipoAuth }}",
+                    "operator": {
+                      "operation": "equals",
+                      "type": "string"
+                    },
+                    "rightValue": "anthropic"
+                  }
+                ],
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                }
+              },
+              "renameOutput": true,
+              "outputKey": "anthropic"
+            },
+            {
+              "conditions": {
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.tipoAuth }}",
+                    "operator": {
+                      "operation": "equals",
+                      "type": "string"
+                    },
+                    "rightValue": "headerAuth"
+                  }
+                ],
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                }
+              },
+              "renameOutput": true,
+              "outputKey": "headerAuth"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "não suportado"
+        }
+      },
+      "id": "e86cef37-2e6e-4827-af32-e13f0ebdaf79",
+      "name": "Rotear por tipo de auth",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        672,
+        384
+      ],
+      "notes": "O HTTP Request não escolhe credencial por expressão: cada tipo de auth tem seu nó com a credencial fixa. Nova fonte com auth diferente = nova regra + novo nó HTTP."
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.baseUrl }}{{ $json.endpointTeste }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "id": "b5808e23-4a23-4a05-9085-64c31acca373",
+      "name": "Testar API (Header Auth)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        320
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "fonteId",
+              "type": "number",
+              "value": "={{ $('Ler fontes ativas').item.json.id }}"
+            },
+            {
+              "id": "a2",
+              "name": "nome",
+              "type": "string",
+              "value": "={{ $('Ler fontes ativas').item.json.nome }}"
+            },
+            {
+              "id": "a3",
+              "name": "ownerEmail",
+              "type": "string",
+              "value": "={{ $('Ler fontes ativas').item.json.ownerEmail }}"
+            },
+            {
+              "id": "a4",
+              "name": "statusAnterior",
+              "type": "string",
+              "value": "={{ $('Ler fontes ativas').item.json.status || 'PENDENTE' }}"
+            },
+            {
+              "id": "a5",
+              "name": "httpStatus",
+              "type": "number",
+              "value": "={{ $json.statusCode ?? 0 }}"
+            },
+            {
+              "id": "a6",
+              "name": "resultado",
+              "type": "string",
+              "value": "={{ (() => {\n  // 2xx = chave aceita; 401/403 = chave recusada; qualquer outra coisa (5xx, 429, rede, timeout) não permite concluir\n  const code = $json.statusCode ?? 0\n  if (code >= 200 && code < 300) return 'VALIDA'\n  if (code === 401 || code === 403) return 'INVALIDA'\n  return 'INDETERMINADA'\n})() }}"
+            },
+            {
+              "id": "a7",
+              "name": "statusNovo",
+              "type": "string",
+              "value": "={{ (() => {\n  // INDETERMINADA não muda o status: mantém o último resultado conclusivo da fonte\n  const code = $json.statusCode ?? 0\n  if (code >= 200 && code < 300) return 'VALIDA'\n  if (code === 401 || code === 403) return 'INVALIDA'\n  return $('Ler fontes ativas').item.json.status || 'PENDENTE'\n})() }}"
+            },
+            {
+              "id": "a8",
+              "name": "motivo",
+              "type": "string",
+              "value": "={{ (() => {\n  const code = $json.statusCode ?? 0\n  // Item veio da saída 'não suportado' do Switch: não houve chamada HTTP\n  if (!$json.statusCode && !$json.error) return 'tipoAuth não suportado: ' + $('Ler fontes ativas').item.json.tipoAuth\n  // Rede, timeout ou credencial ausente no nó\n  if ($json.error) return ('Falha na chamada: ' + ($json.error.message || JSON.stringify($json.error))).slice(0, 250)\n  if (code >= 200 && code < 300) return 'OK'\n  return ('HTTP ' + code + ': ' + ($json.body?.error?.message || $json.body?.message || 'sem detalhe')).slice(0, 250)\n})() }}"
+            },
+            {
+              "id": "a9",
+              "name": "avisoRotacao",
+              "type": "boolean",
+              "value": "={{\n  // Chave com data de expiração cadastrada vencendo nos próximos 15 dias\n  !!$('Ler fontes ativas').item.json.expiraEm && DateTime.fromISO(String($('Ler fontes ativas').item.json.expiraEm)) < $now.plus({ days: 15 })\n}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "d31fefb1-988b-457d-8b55-507f5eea3b4b",
+      "name": "Classificar resultado",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1072,
+        496
+      ],
+      "notes": "VALIDA (2xx) | INVALIDA (401/403) | INDETERMINADA (5xx, 429, rede, timeout). INDETERMINADA não altera o status da fonte, só registra no log."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ $('Classificar resultado').item.json.statusNovo !== $('Classificar resultado').item.json.statusAnterior || $('Classificar resultado').item.json.avisoRotacao }}",
+              "operator": {
+                "operation": "true",
+                "singleValue": true,
+                "type": "boolean"
+              },
+              "rightValue": ""
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          }
+        },
+        "options": {}
+      },
+      "id": "f5f1e86a-fcf2-48be-9ff0-bef9c10e9e62",
+      "name": "Precisa notificar?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1824,
+        144
+      ],
+      "notes": "Só avisa quando o status muda ou a chave está perto de expirar: chave inválida não gera e-mail todo dia."
+    },
+    {
+      "parameters": {
+        "fromEmail": "n8n Auditoria <auditoria@suaempresa.com.br>",
+        "toEmail": "={{ $('Classificar resultado').item.json.ownerEmail }}",
+        "subject": "=[Validação de chave] {{ $('Classificar resultado').item.json.nome }}: {{ $('Classificar resultado').item.json.statusAnterior }} → {{ $('Classificar resultado').item.json.statusNovo }}",
+        "emailFormat": "text",
+        "text": "=Fonte: {{ $('Classificar resultado').item.json.nome }}\nStatus: {{ $('Classificar resultado').item.json.statusAnterior }} → {{ $('Classificar resultado').item.json.statusNovo }}\nResultado do teste: {{ $('Classificar resultado').item.json.resultado }} (HTTP {{ $('Classificar resultado').item.json.httpStatus }})\nMotivo: {{ $('Classificar resultado').item.json.motivo }}\n{{ $('Classificar resultado').item.json.avisoRotacao ? '\\nATENÇÃO: a chave expira em menos de 15 dias — agende a rotação.' : '' }}\n{{ $('Classificar resultado').item.json.statusNovo === 'INVALIDA' ? '\\nA fonte está fora da extração até a chave ser corrigida. Após trocar a credencial no n8n, revalide pelo formulário do WF10.' : '' }}\nValidado em: {{ $now.setZone('America/Sao_Paulo').toFormat('dd/MM/yyyy HH:mm') }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "8380d573-3f3c-4bb8-85f8-74486bd0e3e5",
+      "name": "Avisar dono da chave",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        2048,
+        144
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "webhookId": "ed0c8b00-ff02-4627-a91f-2414c330f4f2"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "cachedResultName": "WF20 - Extrair, carregar e validar endpoint",
+          "mode": "id",
+          "value": "kt3byL4QJyPizUdj"
+        },
+        "workflowInputs": {
+          "attemptToConvertTypes": false,
+          "mappingMode": "defineBelow",
+          "matchingColumns": [],
+          "schema": [
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "endpointId",
+              "id": "endpointId",
+              "required": false,
+              "type": "number"
+            }
+          ],
+          "value": {
+            "endpointId": "={{ $json.id }}"
+          }
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "e4fcbc49-b43a-4c65-9866-f923c309e0a8",
+      "name": "Extrair, DQ e carregar (por endpoint)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.4,
+      "position": [
+        2624,
+        512
+      ],
+      "alwaysOutputData": true,
+      "notes": "Uma execução isolada do WF20 por endpoint: extração incremental com paginação, data quality por registro e lote, upsert em staging, watermark e alerta de carga bloqueada."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "p1",
+              "name": "entidade",
+              "type": "string",
+              "value": "inspecoes"
+            },
+            {
+              "id": "p2",
+              "name": "periodoInicio",
+              "type": "string",
+              "value": "={{ ($('Normalizar entrada').first().json.periodoInicio ? DateTime.fromISO($('Normalizar entrada').first().json.periodoInicio) : $now.minus({ days: 30 })).toISODate() }}"
+            },
+            {
+              "id": "p3",
+              "name": "periodoFim",
+              "type": "string",
+              "value": "={{ ($('Normalizar entrada').first().json.periodoFim ? DateTime.fromISO($('Normalizar entrada').first().json.periodoFim) : $now).toISODate() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "645b1a58-5a0a-44ae-aeba-8276fbfb7db7",
+      "name": "Definir período",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        448,
+        1216
+      ],
+      "executeOnce": true,
+      "notes": "Período vindo da entrada. Sem datas = últimos 30 dias até hoje. executeOnce: roda uma vez mesmo com várias cargas na etapa 2."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Agregações vêm prontas do SQL (nó \"Consultar KPIs (SQL)\"). Aqui: índices, formatação pt-BR\n// (o pacote enviado à IA só tem valores prontos para citar) e a lista de números permitidos na narrativa.\nconst r = $input.first().json;\nconst periodo = $('Definir período').first().json;\nconst ini = DateTime.fromISO(periodo.periodoInicio);\nconst fim = DateTime.fromISO(periodo.periodoFim);\nconst dias = Number(r.dias);\nconst iniAnt = ini.minus({ days: dias });\nconst fimAnt = ini.minus({ days: 1 });\n\nconst agregar = g => {\n  const a = {\n    inspecoes: Number(g?.inspecoes ?? 0), analisadas: Number(g?.analisadas ?? 0), avaria: Number(g?.avaria ?? 0),\n    bruta: Number(g?.bruta ?? 0), desconto: Number(g?.desconto ?? 0),\n  };\n  a.indice = a.analisadas ? a.avaria / a.analisadas * 100 : 0;\n  a.final = a.bruta - a.desconto;\n  return a;\n};\nconst tot = agregar(r.totais);\nconst totAnt = agregar(r.anterior);\nconst porContrato = (r.por_contrato || []).map(g => ({ chave: g.chave, alerta: g.alerta === true, ...agregar(g) }));\nconst porFornecedor = (r.por_fornecedor || []).map(g => ({ chave: g.chave, ...agregar(g) }));\nconst alertas = porContrato.filter(c => c.alerta);\n\nconst n0 = v => v.toLocaleString('pt-BR', { maximumFractionDigits: 0 });\nconst pct = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';\nconst pp = v => (v >= 0 ? '+' : '-') + Math.abs(v).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' p.p.';\nconst brl = v => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });\nconst fmt = a => ({\n  inspecoes: n0(a.inspecoes), pranchasAnalisadas: n0(a.analisadas), pranchasComAvaria: n0(a.avaria),\n  indicePerdas: pct(a.indice), indenizacaoBruta: brl(a.bruta), descontos: brl(a.desconto), indenizacaoFinal: brl(a.final),\n});\nconst fmtGrupo = g => ({ nome: g.chave, ...fmt(g) });\n\nconst kpis = {\n  periodo: { inicio: ini.toFormat('dd/MM/yyyy'), fim: fim.toFormat('dd/MM/yyyy'), dias: n0(dias) },\n  totais: fmt(tot),\n  periodoAnterior: { inicio: iniAnt.toFormat('dd/MM/yyyy'), fim: fimAnt.toFormat('dd/MM/yyyy'), ...fmt(totAnt) },\n  variacao: {\n    indicePerdas: totAnt.inspecoes ? pp(tot.indice - totAnt.indice) : 'sem base de comparação',\n    indenizacaoFinal: totAnt.final ? pct((tot.final - totAnt.final) / Math.abs(totAnt.final) * 100) : 'sem base de comparação',\n  },\n  contagens: { contratos: n0(porContrato.length), fornecedores: n0(porFornecedor.length), contratosEmAlerta: n0(alertas.length), registrosIgnorados: n0(Number(r.ignorados ?? 0)) },\n  porContrato: porContrato.slice(0, 10).map(fmtGrupo),\n  porFornecedor: porFornecedor.slice(0, 10).map(fmtGrupo),\n  contratosEmAlerta: alertas.map(fmtGrupo),\n  serieSemanal: (r.serie_semanal || []).map(s => ({ semana: s.semana, ...fmt(agregar(s)) })),\n  criterioAlerta: 'contrato com pelo menos 50 pranchas analisadas e índice de perdas igual ou maior que o dobro do índice geral',\n};\n\n// Números permitidos na narrativa: todo número que aparece no pacote, normalizado (pt-BR -> valor)\nconst normalizar = t => String(Math.round(Number(t.replace(/\\./g, '').replace(',', '.')) * 100) / 100);\nconst permitidos = new Set();\nconst coletar = v => {\n  if (v && typeof v === 'object') return Object.values(v).forEach(coletar);\n  for (const t of String(v).match(/\\d+(?:[.,]\\d+)*/g) || []) permitidos.add(normalizar(t));\n};\ncoletar(kpis);\n\nreturn [{ json: { semDados: tot.inspecoes === 0, kpis, numerosPermitidos: [...permitidos] } }];\n"
+      },
+      "id": "caae91ba-c83a-4d1d-8ffa-0194c1bff1f9",
+      "name": "Calcular KPIs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        1216
+      ],
+      "notes": "Code justificado: agregação do dataset inteiro (totais, por contrato, por fornecedor, período anterior). Todo número do relatório sai daqui, nunca da IA."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ !$('Calcular KPIs').first().json.semDados }}",
+              "operator": {
+                "operation": "true",
+                "singleValue": true,
+                "type": "boolean"
+              },
+              "rightValue": ""
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          }
+        },
+        "options": {}
+      },
+      "id": "0f3ef08f-30d2-446c-b2d8-aa92d018740e",
+      "name": "Há dados no período?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1120,
+        1216
+      ]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "claude-sonnet-5-5"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=KPIs de inspeção de andaimes do período (JSON):\n{{ JSON.stringify($('Calcular KPIs').first().json.kpis) }}"
+            }
+          ]
+        },
+        "options": {
+          "includeMergedResponse": true,
+          "system": "Você é analista sênior de auditoria de andaimes da Tequaly. Escreva em português do Brasil, tom executivo, direto e objetivo.\n\nRegras obrigatórias:\n- Use SOMENTE números que aparecem no JSON recebido, copiados exatamente como estão escritos (mesma formatação, ex.: \"R$ 26.818,28\", \"4,2%\").\n- Não faça contas, somas, médias, diferenças nem arredondamentos.\n- Não use listas numeradas; use marcadores com \"-\".\n- Se uma informação não estiver no JSON, não mencione.\n\nEstrutura da resposta (markdown):\n## Resumo\n(2 a 3 frases com a leitura geral do período)\n## Destaques\n## Desvios e alertas\n## Ações sugeridas\n(ações qualitativas para a auditoria, sem números novos)",
+          "maxTokens": 1500
+        }
+      },
+      "id": "a755ab4e-b6c8-4329-af04-6e932c9b0e53",
+      "name": "Gerar narrativa",
+      "type": "@n8n/n8n-nodes-langchain.anthropic",
+      "typeVersion": 1,
+      "position": [
+        1296,
+        1072
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput",
+      "notes": "Claude só redige a partir do JSON já calculado. Falha na API não derruba o fluxo: o pacote segue só com KPIs."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "v1",
+              "name": "narrativaBruta",
+              "type": "string",
+              "value": "={{ (() => {\n  const r = $('Gerar narrativa').first().json\n  // A resposta pode vir como texto consolidado ou como lista de partes de conteúdo\n  const texto = r.merged_response ?? (Array.isArray(r.content) ? r.content.filter(c => c.type === 'text').map(c => c.text).join('\\n') : (r.text ?? ''))\n  return texto.trim()\n})() }}"
+            },
+            {
+              "id": "v2",
+              "name": "numerosNaoEncontrados",
+              "type": "array",
+              "value": "={{ (() => {\n  const r = $('Gerar narrativa').first().json\n  // A resposta pode vir como texto consolidado ou como lista de partes de conteúdo\n  const texto = r.merged_response ?? (Array.isArray(r.content) ? r.content.filter(c => c.type === 'text').map(c => c.text).join('\\n') : (r.text ?? ''))\n  const permitidos = new Set($('Calcular KPIs').first().json.numerosPermitidos)\n  // Mesmo normalizador do cálculo: tira separador de milhar, vírgula vira ponto\n  const normalizar = t => String(Math.round(Number(t.replace(/\\./g, '').replace(',', '.')) * 100) / 100)\n  const citados = texto.match(/\\d+(?:[.,]\\d+)*/g) || []\n  return [...new Set(citados.filter(t => !permitidos.has(normalizar(t))))]\n})() }}"
+            },
+            {
+              "id": "v3",
+              "name": "erroApi",
+              "type": "string",
+              "value": "={{ (() => {\n  const e = $('Gerar narrativa').first().json.error\n  // O nó devolve o erro como texto ou como objeto, conforme a falha\n  return !e ? '' : (typeof e === 'string' ? e : (e.message ?? JSON.stringify(e)))\n})() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "299b932f-eb59-4ca7-b5e7-6f2cfebf1525",
+      "name": "Validar narrativa",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1648,
+        1088
+      ],
+      "notes": "Todo número citado no texto precisa existir no pacote de KPIs (comparação por valor, ignorando formatação)."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "m1",
+              "name": "entidade",
+              "type": "string",
+              "value": "={{ $('Definir período').first().json.entidade }}"
+            },
+            {
+              "id": "m2",
+              "name": "periodoInicio",
+              "type": "string",
+              "value": "={{ $('Definir período').first().json.periodoInicio }}"
+            },
+            {
+              "id": "m3",
+              "name": "periodoFim",
+              "type": "string",
+              "value": "={{ $('Definir período').first().json.periodoFim }}"
+            },
+            {
+              "id": "m4",
+              "name": "semDados",
+              "type": "boolean",
+              "value": "={{ $('Calcular KPIs').first().json.semDados }}"
+            },
+            {
+              "id": "m5",
+              "name": "kpis",
+              "type": "object",
+              "value": "={{ $('Calcular KPIs').first().json.kpis }}"
+            },
+            {
+              "id": "m6",
+              "name": "narrativaValida",
+              "type": "boolean",
+              "value": "={{ $('Validar narrativa').isExecuted && !$('Validar narrativa').first().json.erroApi && $('Validar narrativa').first().json.narrativaBruta.length > 0 && $('Validar narrativa').first().json.numerosNaoEncontrados.length === 0 }}"
+            },
+            {
+              "id": "m7",
+              "name": "narrativa",
+              "type": "string",
+              "value": "={{ (() => {\n  const v = $('Validar narrativa')\n  if (!v.isExecuted) return ''\n  const r = v.first().json\n  // Só publica texto sem erro de API e sem número inventado\n  return !r.erroApi && r.narrativaBruta && r.numerosNaoEncontrados.length === 0 ? r.narrativaBruta : ''\n})() }}"
+            },
+            {
+              "id": "m8",
+              "name": "motivoNarrativa",
+              "type": "string",
+              "value": "={{ (() => {\n  const v = $('Validar narrativa')\n  if (!v.isExecuted) return 'Sem inspeções no período: narrativa não gerada'\n  const r = v.first().json\n  if (r.erroApi) return ('Falha na API Claude: ' + r.erroApi).slice(0, 300)\n  if (!r.narrativaBruta) return 'API Claude devolveu texto vazio'\n  if (r.numerosNaoEncontrados.length) return 'Narrativa descartada: números fora dos KPIs (' + r.numerosNaoEncontrados.join(', ') + ')'\n  return 'OK'\n})() }}"
+            },
+            {
+              "id": "m9",
+              "name": "modelo",
+              "type": "string",
+              "value": "claude-sonnet-5-5"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "1c7f9f36-ea02-44de-9ee7-707ed3c8f94f",
+      "name": "Montar pacote",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1792,
+        1216
+      ],
+      "executeOnce": true,
+      "notes": "Convergência dos caminhos com e sem dados. Narrativa só entra se passou na validação; senão o pacote segue só com KPIs."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "o1",
+              "name": "snapshotId",
+              "type": "number",
+              "value": "={{ $('Salvar snapshot').item.json.id }}"
+            },
+            {
+              "id": "o2",
+              "name": "entidade",
+              "type": "string",
+              "value": "={{ $('Montar pacote').item.json.entidade }}"
+            },
+            {
+              "id": "o3",
+              "name": "periodoInicio",
+              "type": "string",
+              "value": "={{ $('Montar pacote').item.json.periodoInicio }}"
+            },
+            {
+              "id": "o4",
+              "name": "periodoFim",
+              "type": "string",
+              "value": "={{ $('Montar pacote').item.json.periodoFim }}"
+            },
+            {
+              "id": "o5",
+              "name": "semDados",
+              "type": "boolean",
+              "value": "={{ $('Montar pacote').item.json.semDados }}"
+            },
+            {
+              "id": "o6",
+              "name": "kpis",
+              "type": "object",
+              "value": "={{ $('Montar pacote').item.json.kpis }}"
+            },
+            {
+              "id": "o7",
+              "name": "narrativa",
+              "type": "string",
+              "value": "={{ $('Montar pacote').item.json.narrativa }}"
+            },
+            {
+              "id": "o8",
+              "name": "narrativaValida",
+              "type": "boolean",
+              "value": "={{ $('Montar pacote').item.json.narrativaValida }}"
+            },
+            {
+              "id": "o9",
+              "name": "motivoNarrativa",
+              "type": "string",
+              "value": "={{ $('Montar pacote').item.json.motivoNarrativa }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "0d469de2-051f-4659-b73f-1eb25d5fe298",
+      "name": "Retornar pacote",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2240,
+        1216
+      ],
+      "notes": "Pacote da etapa 3: o ramo de cima (etapa 4) roda primeiro; o de baixo (consolidação) só depois que a etapa 4 termina."
+    },
+    {
+      "parameters": {
+        "authentication": "apiKey",
+        "operation": "URL/HTML to PDF",
+        "convertType": "htmlToPDF",
+        "html": "={{ $('Montar dashboard').first().json.dashboard.html }}",
+        "advancedOptions": {
+          "name": "={{ 'dashboard-auditoria-' + $('Ler snapshot').first().json.id + '.pdf' }}",
+          "margins": "12mm",
+          "mediaType": "print",
+          "expiration": 60,
+          "paperSize": "a4",
+          "printBackground": true
+        }
+      },
+      "id": "44ee7487-00ea-4220-b6ac-84d534a87d79",
+      "name": "Gerar PDF",
+      "type": "n8n-nodes-pdfco.PDFco Api",
+      "typeVersion": 1.1,
+      "position": [
+        3616,
+        1284
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueErrorOutput",
+      "notes": "PDF.co (créditos do n8n): o HTML sai do ambiente para conversão. Trocar por Gotenberg on-premises quando houver servidor."
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "186adead-606f-425d-91fe-25f17294dcb4",
+      "name": "Baixar PDF",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3840,
+        1284
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueErrorOutput",
+      "notes": "PDF.co devolve um link temporário; o arquivo é baixado para ir como anexo."
+    },
+    {
+      "parameters": {
+        "fromEmail": "n8n Auditoria <auditoria@suaempresa.com.br>",
+        "toEmail": "={{ $('Montar dashboard').first().json.emails }}",
+        "subject": "={{ $('Montar dashboard').first().json.assunto }}",
+        "html": "={{ $('Montar dashboard').first().json.dashboard.email }}",
+        "options": {
+          "appendAttribution": false,
+          "fileAttachments": "data"
+        }
+      },
+      "id": "31f1d11e-ba65-4a76-b402-b9a63536e2f5",
+      "name": "Enviar e-mail",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        4064,
+        1284
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "webhookId": "cc6b0b5a-cde5-4bd2-962c-c93762bb93ac",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c1",
+              "name": "origem",
+              "type": "string",
+              "value": "={{ $('Normalizar entrada').first().json.origem }}"
+            },
+            {
+              "id": "c2",
+              "name": "periodoInicio",
+              "type": "string",
+              "value": "={{ $('Retornar pacote').first().json.periodoInicio }}"
+            },
+            {
+              "id": "c3",
+              "name": "periodoFim",
+              "type": "string",
+              "value": "={{ $('Retornar pacote').first().json.periodoFim }}"
+            },
+            {
+              "id": "c4",
+              "name": "fontesAptas",
+              "type": "number",
+              "value": "={{ $('Retornar fontes aptas').all().filter(i => i.json.id).length }}"
+            },
+            {
+              "id": "c5",
+              "name": "endpoints",
+              "type": "number",
+              "value": "={{ $('Listar endpoints ativos').all().filter(i => i.json.id).length }}"
+            },
+            {
+              "id": "c6",
+              "name": "cargasAprovadas",
+              "type": "number",
+              "value": "={{ $('Extrair, DQ e carregar (por endpoint)').all().filter(i => ['APROVADA', 'SEM_NOVOS'].includes(i.json.status)).length }}"
+            },
+            {
+              "id": "c7",
+              "name": "cargasComProblema",
+              "type": "number",
+              "value": "={{ $('Extrair, DQ e carregar (por endpoint)').all().filter(i => ['BLOQUEADA', 'ERRO', 'PULADA'].includes(i.json.status)).length }}"
+            },
+            {
+              "id": "c8",
+              "name": "snapshotId",
+              "type": "number",
+              "value": "={{ $('Retornar pacote').first().json.snapshotId ?? null }}"
+            },
+            {
+              "id": "c9",
+              "name": "narrativaValida",
+              "type": "boolean",
+              "value": "={{ $('Retornar pacote').first().json.narrativaValida === true }}"
+            },
+            {
+              "id": "c10",
+              "name": "enviosOk",
+              "type": "number",
+              "value": "={{ ($('Registrar envio').isExecuted ? $('Registrar envio').all() : []).filter(i => i.json.status === 'ENVIADO').length }}"
+            },
+            {
+              "id": "c11",
+              "name": "enviosFalha",
+              "type": "number",
+              "value": "={{ ($('Registrar envio').isExecuted ? $('Registrar envio').all() : []).filter(i => i.json.status === 'FALHA').length }}"
+            },
+            {
+              "id": "c12",
+              "name": "status",
+              "type": "string",
+              "value": "={{ (() => {\n  const aptas = $('Retornar fontes aptas').all().filter(i => i.json.id).length\n  const problemas = $('Extrair, DQ e carregar (por endpoint)').all().filter(i => ['BLOQUEADA', 'ERRO', 'PULADA'].includes(i.json.status)).length\n  const falhas = ($('Registrar envio').isExecuted ? $('Registrar envio').all() : []).filter(i => i.json.status === 'FALHA').length\n  if (!aptas) return 'SEM_FONTES'\n  return problemas || falhas ? 'PARCIAL' : 'OK'\n})() }}"
+            },
+            {
+              "id": "c13",
+              "name": "resumo",
+              "type": "string",
+              "value": "={{ (() => {\n  // Uma linha por carga + narrativa + envio, para leitura rápida no log\n  const cargas = $('Extrair, DQ e carregar (por endpoint)').all().filter(i => i.json.status)\n    .map(i => (i.json.entidade || '?') + ': ' + i.json.status + (i.json.status === 'APROVADA' ? ' (' + i.json.aprovados + ' reg.)' : ' - ' + String(i.json.motivo || '').slice(0, 80)))\n  const narrativa = 'Narrativa: ' + ($('Retornar pacote').first().json.motivoNarrativa ?? 'não executada')\n  const envios = ($('Registrar envio').isExecuted ? $('Registrar envio').all() : []).filter(i => i.json.status).map(i => 'e-mail (' + i.json.qtdDestinatarios + ' destinatário(s)): ' + i.json.status)\n  return [...cargas, narrativa, ...(envios.length ? envios : ['Envio: nenhum novo (já enviado ou sem destinatário)'])].join(' | ').slice(0, 1000)\n})() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3b3b5adb-caf7-4c4c-a224-a4f30559c17b",
+      "name": "Consolidar execução",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2720,
+        1904
+      ],
+      "executeOnce": true,
+      "notes": "Ramo de baixo de \"Retornar pacote\": no modo de execução v1 só roda depois que a etapa 4 inteira terminou. Status OK | PARCIAL | SEM_FONTES."
+    },
+    {
+      "parameters": {},
+      "id": "80bf40db-98e2-4d80-964a-9101cbe0846f",
+      "name": "Erro em workflow",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        496,
+        1696
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ $('Registrar erro').item.json.alertado }}",
+              "operator": {
+                "operation": "true",
+                "singleValue": true,
+                "type": "boolean"
+              },
+              "rightValue": ""
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          }
+        },
+        "options": {}
+      },
+      "id": "cc54ab81-9273-4e4d-a358-451e08bb7728",
+      "name": "Alertar agora?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        992,
+        1696
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "n8n Auditoria <auditoria@suaempresa.com.br>",
+        "toEmail": "auditoria@suaempresa.com.br",
+        "subject": "=[n8n · ERRO] {{ $('Erro em workflow').first().json.workflow?.name }} — {{ $('Erro em workflow').first().json.execution?.lastNodeExecuted ?? 'nó desconhecido' }}",
+        "emailFormat": "text",
+        "text": "=Workflow: {{ $('Erro em workflow').first().json.workflow?.name }} ({{ $('Erro em workflow').first().json.workflow?.id }})\nNó que falhou: {{ $('Erro em workflow').first().json.execution?.lastNodeExecuted ?? '-' }}\nErro: {{ $('Erro em workflow').first().json.execution?.error?.message ?? '-' }}\n{{ $('Erro em workflow').first().json.execution?.error?.description ? 'Detalhe: ' + $('Erro em workflow').first().json.execution.error.description + '\\n' : '' }}Quando: {{ $now.setZone('America/Sao_Paulo').toFormat('dd/MM/yyyy HH:mm:ss') }}\nModo: {{ $('Erro em workflow').first().json.execution?.mode ?? '-' }}\n\nAbrir execução: {{ $('Erro em workflow').first().json.execution?.url ?? '(sem link: execução não salva)' }}\nAbrir workflow: {{ String($('Erro em workflow').first().json.execution?.url ?? '').split('/executions/')[0] || '-' }}\n\nErros iguais na próxima hora ficam só em erro_log (sem novo e-mail).",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "30c911eb-7c90-46ce-b394-e7b7421bd6eb",
+      "name": "Alertar por e-mail",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1312,
+        1696
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000,
+      "webhookId": "ad2929ea-8635-4bf7-9d44-aff9cb985b73",
+      "disabled": true,
+      "onError": "continueRegularOutput",
+      "notes": "Desativado até existir a credencial SMTP (publicar exige credencial em todo nó ativo). Falha no e-mail não derruba o tratamento: o erro já está em erro_log."
+    },
+    {
+      "parameters": {
+        "content": "## ① Validação de chaves\nLê `fontes_sistema`, testa a chave de cada fonte ativa por tipo de auth, classifica VALIDA / INVALIDA / INDETERMINADA, grava `validacao_log` e avisa o dono só quando o status muda.",
+        "height": 712,
+        "width": 1900
+      },
+      "id": "8216a3ef-f3e1-44d4-ab44-ae54ef693c5e",
+      "name": "Caixa 1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        352,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## ② Extração, carga e data quality\nUm sub-workflow (WF20) por endpoint ativo: incremental + paginação, DQ por registro e lote, upsert idempotente em `staging_registros`. Lote inválido é bloqueado e alertado.",
+        "height": 430,
+        "width": 564
+      },
+      "id": "90e6daaf-dcf3-4c0b-b158-9e1f0887b4ad",
+      "name": "Caixa 2",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2288,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## ③ KPIs em SQL + narrativa (API Claude)\nAgregação no PostgreSQL (`auditoria.vw_inspecoes`): período, anterior, contrato, fornecedor, semana e alertas. O Claude só redige; narrativa descartada se citar número fora dos KPIs. Snapshot em `auditoria.kpi_snapshots`.",
+        "height": 494,
+        "width": 2092,
+        "color": 5
+      },
+      "id": "5bf9d43b-ac4c-46ce-9dbf-2084d2702ae8",
+      "name": "Caixa 3",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        352,
+        960
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## ④ Dashboard e envio por e-mail\nUm único dashboard (HTML) → PDF → o mesmo dashboard enviado por e-mail a todos os destinatários ativos (HTML no corpo + PDF anexo). Dedup por snapshot e trilha em `envio_log`.",
+        "height": 560,
+        "width": 1900,
+        "color": 4
+      },
+      "id": "9637792f-b6f2-4a30-a3a6-d929114c308c",
+      "name": "Caixa 4",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2624,
+        912
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## ⑤ Consolidação\nResumo de ponta a ponta em `pipeline_log`.",
+        "height": 350,
+        "width": 524,
+        "color": 7
+      },
+      "id": "9dd06aba-25a4-4e18-ba91-10b0b1042fef",
+      "name": "Caixa 5",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2624,
+        1744
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Tratamento de erro (global)\nQualquer falha não tratada desta execução → `erro_log` + alerta por e-mail (1 por hora por erro igual). Falhas dentro do WF20 vão para o WF99.",
+        "height": 350,
+        "width": 1196,
+        "color": 3
+      },
+      "id": "a3caebc2-5dba-46f5-861c-2655864f105b",
+      "name": "Caixa erro",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        464,
+        1568
+      ]
+    },
+    {
+      "id": "92d9947f-dcfc-403a-8a4e-a2141532526b",
+      "name": "Montar dashboard",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3168,
+        1284
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "d1",
+              "name": "emails",
+              "type": "string",
+              "value": "={{ [...new Set($('Ler destinatários').all().map(i => i.json).filter(d => d.canalEmail && d.email).map(d => String(d.email).trim()))].join(', ') }}"
+            },
+            {
+              "id": "d2",
+              "name": "qtdDestinatarios",
+              "type": "number",
+              "value": "={{ new Set($('Ler destinatários').all().map(i => i.json).filter(d => d.canalEmail && d.email).map(d => String(d.email).trim())).size }}"
+            },
+            {
+              "id": "d3",
+              "name": "assunto",
+              "type": "string",
+              "value": "={{ (() => {\n  const k = JSON.parse($('Ler snapshot').first().json.kpis_object || '{}')\n  return '[Auditoria] Dashboard de inspeções ' + (k.periodo?.inicio ?? '') + ' a ' + (k.periodo?.fim ?? '') + ' · índice de perdas ' + (k.totais?.indicePerdas ?? '-')\n})() }}"
+            },
+            {
+              "id": "d4",
+              "name": "dashboard",
+              "type": "object",
+              "value": "={{ (() => {\n  // Dashboard único do snapshot: html = PDF completo (gráficos SVG); email = versão compatível com clientes de e-mail (tabelas)\n  const snap = $('Ler snapshot').first().json\n  const k = JSON.parse(snap.kpis_object || '{}')\n  const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;')\n  // Valores do WF30 chegam formatados em pt-BR (\"1.234\", \"4,2%\", \"R$ 1.234,56\", \"+0,5 p.p.\"); n() devolve o número para os gráficos\n  const n = s => { const v = parseFloat(String(s ?? '').replace(/[^\\d,.-]/g, '').replace(/\\./g, '').replace(',', '.')); return Number.isFinite(v) ? v : 0 }\n  const dec1 = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })\n  const corte = (s, max) => { const x = String(s ?? ''); return x.length > max ? x.slice(0, max - 1) + '…' : x }\n  const C = { navy: '#12263F', azul: '#2E6FD8', azulClaro: '#CFDDF7', verde: '#1E8E5A', vermelho: '#C62828', ambar: '#D98E04', cinza: '#5B6675', cinzaClaro: '#EEF1F5', borda: '#DDE2EA', fundo: '#F6F8FB', texto: '#1C2430' }\n\n  const t = k.totais || {}\n  const ant = k.periodoAnterior || {}\n  const contratos = k.porContrato || []\n  const fornecedores = k.porFornecedor || []\n  const alertas = k.contratosEmAlerta || []\n  const emAlerta = new Set(alertas.map(a => a.nome))\n  const serie = k.serieSemanal || []\n  const geral = n(t.indicePerdas)\n  const temAnterior = n(ant.inspecoes) > 0\n  const periodo = (k.periodo?.inicio ?? '-') + ' a ' + (k.periodo?.fim ?? '-')\n  const geradoEm = $now.setZone('America/Sao_Paulo').toFormat('dd/MM/yyyy HH:mm')\n\n  // Variação vs. período anterior: vermelho quando piora, verde quando melhora, cinza quando neutro\n  const chip = (texto, cor) => `<span class=\"chip\" style=\"color:${cor};background:${cor}1F\">${esc(texto)}</span>`\n  const variacao = (a, b, sufixo, piorSobe, pontos) => {\n    if (!temAnterior) return chip('sem base de comparação', C.cinza)\n    // Índice: usa a variação já calculada no WF30 (sem arredondamento intermediário)\n    const d = pontos ? n(k.variacao?.indicePerdas) : (n(b) ? (n(a) - n(b)) / Math.abs(n(b)) * 100 : null)\n    if (d === null) return chip('sem base de comparação', C.cinza)\n    const cor = Math.abs(d) < 0.05 || piorSobe === null ? C.cinza : (d > 0) === piorSobe ? C.vermelho : C.verde\n    const txt = pontos ? String(k.variacao?.indicePerdas ?? '').replace(/^\\+/, '') : dec1(Math.abs(d)) + sufixo\n    return chip((d > 0 ? '▲ +' : d < 0 ? '▼ ' : '■ ') + txt.replace(/^-/, '') + ' vs. anterior', cor)\n  }\n  const situacao = g => emAlerta.has(g.nome) ? chip('Em alerta', C.vermelho) : n(g.indicePerdas) > geral ? chip('Acima do geral', C.ambar) : chip('Normal', C.verde)\n  const corIndice = g => emAlerta.has(g.nome) ? C.vermelho : n(g.indicePerdas) > geral ? C.ambar : C.azul\n\n  // Narrativa (## título, - marcador) -> HTML\n  const narrativaHtml = (cor) => snap.narrativaValida && snap.narrativa\n    ? snap.narrativa.split('\\n').map(l => l.startsWith('## ') ? `<div style=\"font-weight:700;color:${cor};margin:10px 0 4px;font-size:13px\">${esc(l.slice(3))}</div>`\n        : l.startsWith('- ') ? `<div style=\"margin:2px 0 2px 10px\">• ${esc(l.slice(2))}</div>` : (l.trim() ? `<p style=\"margin:4px 0\">${esc(l)}</p>` : '')).join('')\n    : `<p style=\"color:${C.cinza};font-style:italic;margin:0\">Resumo automático indisponível neste envio. Os indicadores são calculados diretamente dos dados.</p>`\n\n  // ---------- Gráficos (SVG, para o PDF) ----------\n  const donut = (() => {\n    const total = n(t.pranchasAnalisadas), av = n(t.pranchasComAvaria), r = 62, c = 2 * Math.PI * r\n    const frac = total ? Math.min(1, av / total) : 0\n    return `<svg width=\"180\" height=\"180\" viewBox=\"0 0 180 180\">\n      <circle cx=\"90\" cy=\"90\" r=\"${r}\" fill=\"none\" stroke=\"${C.verde}\" stroke-opacity=\"0.25\" stroke-width=\"24\"/>\n      <circle cx=\"90\" cy=\"90\" r=\"${r}\" fill=\"none\" stroke=\"${C.vermelho}\" stroke-width=\"24\" stroke-dasharray=\"${(frac * c).toFixed(1)} ${c.toFixed(1)}\" transform=\"rotate(-90 90 90)\"/>\n      <text x=\"90\" y=\"88\" text-anchor=\"middle\" font-size=\"26\" font-weight=\"700\" fill=\"${C.navy}\">${esc(t.indicePerdas ?? '-')}</text>\n      <text x=\"90\" y=\"110\" text-anchor=\"middle\" font-size=\"11\" fill=\"${C.cinza}\">das pranchas com avaria</text></svg>`\n  })()\n\n  const comparativo = [['Inspeções', t.inspecoes, ant.inspecoes], ['Pranchas analisadas', t.pranchasAnalisadas, ant.pranchasAnalisadas], ['Pranchas com avaria', t.pranchasComAvaria, ant.pranchasComAvaria], ['Indenização final', t.indenizacaoFinal, ant.indenizacaoFinal]]\n    .map(([rot, a, b]) => {\n      const m = Math.max(n(a), n(b)) || 1\n      const barra = (val, cor, txt) => `<div class=\"cmp-linha\"><div class=\"trilho\"><div class=\"barra\" style=\"width:${Math.max(1.5, n(val) / m * 100).toFixed(1)}%;background:${cor}\"></div></div><span class=\"cmp-val\">${esc(txt ?? '-')}</span></div>`\n      return `<div class=\"cmp\"><div class=\"cmp-rot\">${rot}</div>${barra(a, C.azul, a)}${barra(b, '#A9B4C4', b)}</div>`\n    }).join('')\n\n  const tendencia = (() => {\n    if (serie.length < 2) return `<div class=\"vazio\">A tendência semanal aparece quando o período tem inspeções em pelo menos 2 semanas.</div>`\n    const W = 720, H = 230, pl = 48, pr = 20, pt = 26, pb = 34, w = W - pl - pr, h = H - pt - pb\n    const maxA = Math.max(...serie.map(s => n(s.pranchasAnalisadas)), 1)\n    const maxI = Math.max(...serie.map(s => n(s.indicePerdas)), geral, 1) * 1.25\n    const passo = w / serie.length, bw = Math.min(48, passo * 0.55)\n    const x = i => pl + passo * i + passo / 2\n    const yA = v => pt + h - v / maxA * h\n    const yI = v => pt + h - v / maxI * h\n    const grade = [0.25, 0.5, 0.75, 1].map(f => `<line x1=\"${pl}\" y1=\"${(pt + h - f * h).toFixed(1)}\" x2=\"${W - pr}\" y2=\"${(pt + h - f * h).toFixed(1)}\" stroke=\"${C.cinzaClaro}\"/><text x=\"${pl - 6}\" y=\"${(pt + h - f * h + 3).toFixed(1)}\" text-anchor=\"end\" font-size=\"9\" fill=\"${C.cinza}\">${Math.round(maxA * f).toLocaleString('pt-BR')}</text>`).join('')\n    const barras = serie.map((s, i) => `<rect x=\"${(x(i) - bw / 2).toFixed(1)}\" y=\"${yA(n(s.pranchasAnalisadas)).toFixed(1)}\" width=\"${bw.toFixed(1)}\" height=\"${(pt + h - yA(n(s.pranchasAnalisadas))).toFixed(1)}\" rx=\"3\" fill=\"${C.azulClaro}\"/><text x=\"${x(i).toFixed(1)}\" y=\"${H - 18}\" text-anchor=\"middle\" font-size=\"10\" fill=\"${C.cinza}\">sem. ${esc(s.semana)}</text>`).join('')\n    const linha = serie.map((s, i) => x(i).toFixed(1) + ',' + yI(n(s.indicePerdas)).toFixed(1)).join(' ')\n    const pontos = serie.map((s, i) => `<circle cx=\"${x(i).toFixed(1)}\" cy=\"${yI(n(s.indicePerdas)).toFixed(1)}\" r=\"4.5\" fill=\"#fff\" stroke=\"${C.vermelho}\" stroke-width=\"2.5\"/><text x=\"${x(i).toFixed(1)}\" y=\"${(yI(n(s.indicePerdas)) - 10).toFixed(1)}\" text-anchor=\"middle\" font-size=\"10.5\" font-weight=\"700\" fill=\"${C.vermelho}\">${esc(s.indicePerdas)}</text>`).join('')\n    const yG = yI(geral).toFixed(1)\n    return `<svg width=\"100%\" viewBox=\"0 0 ${W} ${H}\">${grade}\n      <line x1=\"${pl}\" y1=\"${pt + h}\" x2=\"${W - pr}\" y2=\"${pt + h}\" stroke=\"${C.borda}\"/>${barras}\n      <line x1=\"${pl}\" y1=\"${yG}\" x2=\"${W - pr}\" y2=\"${yG}\" stroke=\"${C.cinza}\" stroke-dasharray=\"5 4\"/>\n      <polyline points=\"${linha}\" fill=\"none\" stroke=\"${C.vermelho}\" stroke-width=\"2.5\" stroke-linejoin=\"round\"/>${pontos}</svg>\n      <div class=\"legenda\"><i style=\"background:${C.azulClaro}\"></i>Pranchas analisadas na semana<i style=\"background:${C.vermelho}\"></i>Índice de perdas da semana<i style=\"background:none;border-top:2px dashed ${C.cinza};height:0;border-radius:0\"></i>Índice do período (${esc(t.indicePerdas)})</div>`\n  })()\n\n  // Barras horizontais com linhas de referência opcionais\n  const barrasH = (linhas, valor, rotulo, cor, refs) => {\n    if (!linhas.length) return `<div class=\"vazio\">Sem dados no período.</div>`\n    const W = 720, lw = 190, vw = 150, rowH = 28, topo = 22, H = linhas.length * rowH + topo + 6, w = W - lw - vw\n    const max = Math.max(...linhas.map(valor), ...refs.map(r => r.valor), 0.0001) * 1.05\n    const xv = v => lw + Math.max(0, v) / max * w\n    const fundoLinha = linhas.map((g, i) => i % 2 ? '' : `<rect x=\"0\" y=\"${topo + i * rowH}\" width=\"${W}\" height=\"${rowH}\" fill=\"${C.fundo}\"/>`).join('')\n    const barras = linhas.map((g, i) => {\n      const y = topo + i * rowH, v = valor(g)\n      return `<text x=\"${lw - 10}\" y=\"${y + 18}\" text-anchor=\"end\" font-size=\"11.5\" fill=\"${C.texto}\">${esc(corte(g.nome, 28))}</text>\n        <rect x=\"${lw}\" y=\"${y + 6}\" width=\"${Math.max(2, xv(v) - lw).toFixed(1)}\" height=\"16\" rx=\"3\" fill=\"${cor(g)}\"/>\n        <text x=\"${(xv(v) + 7).toFixed(1)}\" y=\"${y + 18}\" font-size=\"11.5\" font-weight=\"700\" fill=\"${C.texto}\">${esc(rotulo(g))}</text>`\n    }).join('')\n    const linhasRef = refs.map((r, j) => `<line x1=\"${xv(r.valor).toFixed(1)}\" y1=\"${topo - 4}\" x2=\"${xv(r.valor).toFixed(1)}\" y2=\"${H - 4}\" stroke=\"${r.cor}\" stroke-width=\"1.5\" stroke-dasharray=\"5 3\"/><text x=\"${xv(r.valor).toFixed(1)}\" y=\"${topo - 8 - j * 0}\" text-anchor=\"${j ? 'start' : 'end'}\" dx=\"${j ? 4 : -4}\" font-size=\"9.5\" font-weight=\"700\" fill=\"${r.cor}\">${esc(r.rotulo)}</text>`).join('')\n    return `<svg width=\"100%\" viewBox=\"0 0 ${W} ${H}\">${fundoLinha}${barras}${linhasRef}</svg>`\n  }\n  const refsIndice = geral > 0 ? [{ valor: geral, rotulo: 'geral ' + t.indicePerdas, cor: C.cinza }, { valor: geral * 2, rotulo: 'alerta ≥ ' + dec1(geral * 2) + '%', cor: C.vermelho }] : []\n  const graficoContratos = barrasH(contratos, g => n(g.indicePerdas), g => g.indicePerdas + ' · ' + g.pranchasComAvaria + '/' + g.pranchasAnalisadas, corIndice, refsIndice)\n  const graficoFornecedores = barrasH(fornecedores, g => n(g.indenizacaoFinal), g => g.indenizacaoFinal, corIndice, [])\n\n  // ---------- Tabelas ----------\n  const tabela = (titulo, linhas, comSituacao) => !linhas.length ? '' : `\n    <table class=\"tab\"><thead><tr><th style=\"text-align:left\">${titulo}</th><th>Inspeções</th><th>Analisadas</th><th>Com avaria</th><th>Índice</th><th>Indeniz. bruta</th><th>Descontos</th><th>Indeniz. final</th>${comSituacao ? '<th>Situação</th>' : ''}</tr></thead><tbody>\n    ${linhas.map(g => `<tr><td style=\"text-align:left;font-weight:600\">${esc(g.nome)}</td><td>${esc(g.inspecoes)}</td><td>${esc(g.pranchasAnalisadas)}</td><td>${esc(g.pranchasComAvaria)}</td><td style=\"font-weight:700;color:${corIndice(g)}\">${esc(g.indicePerdas)}</td><td>${esc(g.indenizacaoBruta)}</td><td>${esc(g.descontos)}</td><td style=\"font-weight:700\">${esc(g.indenizacaoFinal)}</td>${comSituacao ? `<td>${situacao(g)}</td>` : ''}</tr>`).join('')}\n    </tbody></table>`\n\n  const card = (rotulo, valor, detalhe, destaque) => `<td class=\"card${destaque ? ' destaque' : ''}\"><div class=\"rotulo\">${rotulo}</div><div class=\"valor\">${esc(valor ?? '-')}</div><div class=\"det\">${detalhe}</div></td>`\n  const statusGeral = snap.semDados ? chip('Sem inspeções no período', '#FFFFFF')\n    : alertas.length ? chip(alertas.length + ' contrato(s) em alerta', '#FFB4A9') : chip('Nenhum contrato em alerta', '#9BE3BF')\n\n  const css = `\n    *{box-sizing:border-box} body{margin:0;font-family:'Segoe UI',Roboto,'Helvetica Neue',Arial,'Liberation Sans',sans-serif;color:${C.texto};font-size:12px;-webkit-print-color-adjust:exact;print-color-adjust:exact}\n    .pag{max-width:760px;margin:0 auto}\n    .topo{background:${C.navy};color:#fff;border-radius:10px;padding:18px 22px;display:flex;justify-content:space-between;align-items:flex-end}\n    .topo .marca{font-size:11px;letter-spacing:1.5px;text-transform:uppercase;opacity:.75}\n    .topo h1{margin:4px 0 2px;font-size:22px} .topo .sub{font-size:12px;opacity:.85}\n    .topo .dir{text-align:right;font-size:10.5px;opacity:.9;line-height:1.7}\n    .chip{display:inline-block;padding:2px 9px;border-radius:999px;font-size:10.5px;font-weight:700;white-space:nowrap}\n    table.cards{width:100%;border-spacing:8px;margin:10px -8px 0;table-layout:fixed}\n    .card{background:#fff;border:1px solid ${C.borda};border-radius:10px;padding:11px 10px 9px;vertical-align:top}\n    .card.destaque{border:2px solid ${C.vermelho};}\n    .card .rotulo{font-size:10px;color:${C.cinza};text-transform:uppercase;letter-spacing:.6px;font-weight:600}\n    .card .valor{font-size:18px;font-weight:800;color:${C.navy};margin:6px 0 6px;white-space:nowrap;letter-spacing:-.3px}\n    .card .chip{white-space:normal;font-size:9.5px;padding:2px 7px}\n    .card .det{font-size:10px;color:${C.cinza};line-height:1.6}\n    .sec{border:1px solid ${C.borda};border-radius:10px;padding:14px 16px;margin-top:12px;break-inside:avoid;page-break-inside:avoid;background:#fff}\n    .sec h2{margin:0 0 2px;font-size:14px;color:${C.navy};} .sec .nota{font-size:10.5px;color:${C.cinza};margin-bottom:10px}\n    .duas{display:flex;gap:12px} .duas>.sec{flex:1;margin-top:12px}\n    .donut{display:flex;align-items:center;gap:14px} .leg-linha{font-size:11.5px;margin:6px 0} .leg-linha b{font-size:14px}\n    .quad{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:middle}\n    .cmp{margin-bottom:9px} .cmp-rot{font-size:10.5px;font-weight:700;color:${C.cinza};margin-bottom:3px}\n    .cmp-linha{display:flex;align-items:center;gap:8px;margin:2px 0} .trilho{flex:1;height:11px;background:${C.cinzaClaro};border-radius:6px;overflow:hidden}\n    .barra{height:11px;border-radius:6px} .cmp-val{width:96px;text-align:right;font-size:10.5px;font-weight:600}\n    .legenda{font-size:10.5px;color:${C.cinza};margin-top:4px} .legenda i{display:inline-block;width:10px;height:10px;border-radius:2px;margin:0 6px 0 14px;vertical-align:middle} .legenda i:first-child{margin-left:0}\n    .narr{background:${C.fundo};border-left:4px solid ${C.azul};border-radius:6px;padding:10px 14px;line-height:1.55}\n    .alerta{background:#FDECEA;border:1px solid #F5C6C1;color:#8A1F17;border-radius:8px;padding:10px 14px;margin-top:10px;font-size:12px}\n    .vazio{color:${C.cinza};font-style:italic;padding:16px;text-align:center;background:${C.fundo};border-radius:8px}\n    table.tab{width:100%;border-collapse:collapse;font-size:10.5px;margin-top:4px} .tab th{background:${C.navy};color:#fff;padding:7px 6px;font-weight:600;text-align:right}\n    .tab td{padding:6px;border-bottom:1px solid ${C.cinzaClaro};text-align:right;} .tab tbody tr:nth-child(even){background:${C.fundo};}\n    .quebra{break-before:page;page-break-before:always}\n    .rodape{margin-top:14px;font-size:9.5px;color:#8A94A3;border-top:1px solid ${C.borda};padding-top:8px;line-height:1.6}`\n\n  const total = n(t.pranchasAnalisadas), av = n(t.pranchasComAvaria)\n  const corpo = snap.semDados\n    ? `<div class=\"sec\"><div class=\"vazio\" style=\"font-size:14px\">Nenhuma inspeção registrada entre ${esc(periodo)}.<br>O dashboard será preenchido assim que houver inspeções carregadas no período.</div></div>`\n    : `<table class=\"cards\"><tr>\n        ${card('Índice de perdas', t.indicePerdas, variacao(t.indicePerdas, ant.indicePerdas, ' p.p.', true, true) + '<br>anterior: ' + esc(ant.indicePerdas ?? '-'), true)}\n        ${card('Inspeções', t.inspecoes, variacao(t.inspecoes, ant.inspecoes, '%', null, false) + '<br>' + esc(k.contagens?.contratos ?? '0') + ' contrato(s) · ' + esc(k.contagens?.fornecedores ?? '0') + ' fornecedor(es)')}\n        ${card('Pranchas analisadas', t.pranchasAnalisadas, variacao(t.pranchasAnalisadas, ant.pranchasAnalisadas, '%', null, false) + '<br>anterior: ' + esc(ant.pranchasAnalisadas ?? '-'))}\n        ${card('Pranchas com avaria', t.pranchasComAvaria, variacao(t.pranchasComAvaria, ant.pranchasComAvaria, '%', true, false) + '<br>anterior: ' + esc(ant.pranchasComAvaria ?? '-'))}\n        ${card('Indenização final', t.indenizacaoFinal, variacao(t.indenizacaoFinal, ant.indenizacaoFinal, '%', null, false) + '<br>bruta ' + esc(t.indenizacaoBruta ?? '-') + ' · desc. ' + esc(t.descontos ?? '-'))}\n      </tr></table>\n\n      <div class=\"sec\"><h2>Resumo executivo</h2><div class=\"nota\">Texto gerado por IA a partir dos indicadores e conferido número a número.</div>\n        <div class=\"narr\">${narrativaHtml(C.navy)}</div>\n        ${alertas.length ? `<div class=\"alerta\"><b>⚠ ${alertas.length} contrato(s) em alerta</b> (índice ≥ 2× o geral com ≥ 50 pranchas): ${alertas.map(a => '<b>' + esc(a.nome) + '</b> ' + esc(a.indicePerdas)).join(' · ')}</div>` : ''}\n      </div>\n\n      <div class=\"duas\">\n        <div class=\"sec\"><h2>Composição das pranchas</h2><div class=\"nota\">Pranchas analisadas no período</div>\n          <div class=\"donut\">${donut}<div>\n            <div class=\"leg-linha\"><span class=\"quad\" style=\"background:${C.vermelho}\"></span>Com avaria<br><b>${esc(t.pranchasComAvaria)}</b></div>\n            <div class=\"leg-linha\"><span class=\"quad\" style=\"background:${C.verde};opacity:.35\"></span>Sem avaria<br><b>${Math.max(0, total - av).toLocaleString('pt-BR')}</b></div>\n            <div class=\"leg-linha\" style=\"color:${C.cinza}\">Total: <b style=\"color:${C.texto}\">${esc(t.pranchasAnalisadas)}</b></div>\n          </div></div></div>\n        <div class=\"sec\"><h2>Período atual × anterior</h2><div class=\"nota\"><span class=\"quad\" style=\"background:${C.azul}\"></span>${esc(periodo)} &nbsp; <span class=\"quad\" style=\"background:#A9B4C4\"></span>${esc((ant.inicio ?? '-') + ' a ' + (ant.fim ?? '-'))}</div>${comparativo}</div>\n      </div>\n\n      <div class=\"sec\"><h2>Tendência semanal</h2><div class=\"nota\">Volume inspecionado (barras) e índice de perdas (linha) por semana; tracejado = índice do período.</div>${tendencia}</div>\n\n      <div class=\"sec\"><h2>Índice de perdas por contrato</h2><div class=\"nota\">10 maiores índices · rótulo: índice · com avaria/analisadas</div>${graficoContratos}\n        <div class=\"legenda\"><i style=\"background:${C.vermelho}\"></i>Em alerta<i style=\"background:${C.ambar}\"></i>Acima do índice geral<i style=\"background:${C.azul}\"></i>Até o índice geral</div></div>\n\n      <div class=\"sec\"><h2>Indenização final por fornecedor</h2><div class=\"nota\">10 fornecedores com maior índice de perdas · cor pela situação do índice</div>${graficoFornecedores}</div>\n\n      <div class=\"sec\"><h2>Detalhamento por contrato</h2>${tabela('Contrato', contratos, true)}</div>\n      <div class=\"sec\"><h2>Detalhamento por fornecedor</h2>${tabela('Fornecedor', fornecedores, false)}</div>`\n\n  const html = `<!doctype html><html><head><meta charset=\"utf-8\"><style>${css}</style></head><body><div class=\"pag\">\n    <div class=\"topo\"><div><div class=\"marca\">Tequaly · Auditoria de andaimes</div><h1>Dashboard de inspeções</h1><div class=\"sub\">Período ${esc(periodo)}</div></div>\n      <div class=\"dir\">${statusGeral}<br>Gerado em ${esc(geradoEm)}<br>Snapshot #${esc(snap.id)}</div></div>\n    ${corpo}\n    <div class=\"rodape\"><b>Metodologia.</b> Índice de perdas = pranchas com avaria ÷ pranchas analisadas. Indenização final = bruta − descontos. Comparação com o período anterior de mesma duração (${esc((ant.inicio ?? '-') + ' a ' + (ant.fim ?? '-'))}). Critério de alerta: ${esc(k.criterioAlerta ?? '-')}. Registros ignorados por dados inválidos: ${esc(k.contagens?.registrosIgnorados ?? '0')}. Números calculados a partir do sistema interno; o resumo é produzido por IA e conferido contra os indicadores.</div>\n  </div></body></html>`\n\n  // ---------- Versão para o corpo do e-mail (tabelas e estilos inline) ----------\n  const kpiMail = (rotulo, valor, sub, cor) => `<td width=\"50%\" style=\"padding:6px\"><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border:1px solid ${C.borda};border-radius:8px\"><tr><td style=\"padding:12px\">\n    <div style=\"font-size:10px;color:${C.cinza};text-transform:uppercase;letter-spacing:.6px;font-weight:bold\">${rotulo}</div>\n    <div style=\"font-size:22px;font-weight:bold;color:${cor || C.navy};margin:4px 0\">${esc(valor ?? '-')}</div>\n    <div style=\"font-size:11px;color:${C.cinza}\">${sub}</div></td></tr></table></td>`\n  const top5 = contratos.slice(0, 5)\n  const maxTop = Math.max(...top5.map(g => n(g.indicePerdas)), 0.0001)\n  const linhasTop = top5.map(g => `<tr><td style=\"padding:5px 8px 5px 0;font-size:12px;white-space:nowrap\">${esc(corte(g.nome, 26))}</td>\n    <td width=\"60%\" style=\"padding:5px 0\"><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\"><tr><td width=\"${Math.max(2, Math.round(n(g.indicePerdas) / maxTop * 100))}%\" bgcolor=\"${corIndice(g)}\" style=\"height:10px;font-size:0;line-height:0;border-radius:3px\">&nbsp;</td><td style=\"font-size:0;line-height:0\">&nbsp;</td></tr></table></td>\n    <td style=\"padding:5px 0 5px 8px;font-size:12px;font-weight:bold;color:${corIndice(g)};text-align:right;white-space:nowrap\">${esc(g.indicePerdas)}</td></tr>`).join('')\n  const email = `<!doctype html><html><head><meta charset=\"utf-8\"></head><body style=\"margin:0;padding:0;background:${C.fundo}\">\n  <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" bgcolor=\"${C.fundo}\"><tr><td align=\"center\" style=\"padding:20px 10px\">\n  <table width=\"640\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:640px;width:100%;background:#fff;border-radius:10px;font-family:Arial,Helvetica,sans-serif;color:${C.texto}\">\n    <tr><td bgcolor=\"${C.navy}\" style=\"padding:18px 22px;border-radius:10px 10px 0 0;color:#fff\">\n      <div style=\"font-size:11px;letter-spacing:1.5px;text-transform:uppercase;opacity:.8\">Tequaly · Auditoria de andaimes</div>\n      <div style=\"font-size:21px;font-weight:bold;margin-top:4px\">Dashboard de inspeções</div>\n      <div style=\"font-size:13px;opacity:.9\">Período ${esc(periodo)}</div></td></tr>\n    <tr><td style=\"padding:16px 16px 4px;font-size:13px\">O dashboard completo, com gráficos e tabelas de detalhamento, está no <b>PDF anexo</b>. Destaques do período:</td></tr>\n    ${snap.semDados ? `<tr><td style=\"padding:16px;font-size:13px;color:${C.cinza}\">Nenhuma inspeção registrada no período.</td></tr>` : `\n    <tr><td style=\"padding:4px 10px\"><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\">\n      <tr>${kpiMail('Índice de perdas', t.indicePerdas, 'anterior: ' + esc(ant.indicePerdas ?? '-') + ' · ' + esc(k.variacao?.indicePerdas ?? '-'), C.vermelho)}${kpiMail('Indenização final', t.indenizacaoFinal, 'variação: ' + esc(k.variacao?.indenizacaoFinal ?? '-'))}</tr>\n      <tr>${kpiMail('Pranchas analisadas', t.pranchasAnalisadas, esc(t.inspecoes ?? '0') + ' inspeção(ões)')}${kpiMail('Pranchas com avaria', t.pranchasComAvaria, 'anterior: ' + esc(ant.pranchasComAvaria ?? '-'))}</tr>\n    </table></td></tr>\n    ${alertas.length ? `<tr><td style=\"padding:8px 16px\"><div style=\"background:#FDECEA;border:1px solid #F5C6C1;color:#8A1F17;border-radius:8px;padding:10px 14px;font-size:13px\"><b>⚠ ${alertas.length} contrato(s) em alerta:</b> ${alertas.map(a => esc(a.nome) + ' (' + esc(a.indicePerdas) + ')').join(', ')}</div></td></tr>` : ''}\n    <tr><td style=\"padding:10px 16px\"><div style=\"font-size:14px;font-weight:bold;color:${C.navy};margin-bottom:6px\">Resumo executivo</div>\n      <div style=\"background:${C.fundo};border-left:4px solid ${C.azul};padding:10px 14px;font-size:13px;line-height:1.5\">${narrativaHtml(C.navy)}</div></td></tr>\n    ${top5.length ? `<tr><td style=\"padding:10px 16px\"><div style=\"font-size:14px;font-weight:bold;color:${C.navy};margin-bottom:6px\">Contratos com maior índice de perdas</div>\n      <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\">${linhasTop}</table></td></tr>` : ''}`}\n    <tr><td style=\"padding:14px 16px 18px;font-size:10px;color:#8A94A3;border-top:1px solid ${C.borda}\">Snapshot #${esc(snap.id)} · gerado em ${esc(geradoEm)} pelo n8n. Números calculados a partir do sistema interno; o resumo é produzido por IA e conferido contra os indicadores.</td></tr>\n  </table></td></tr></table></body></html>`\n\n  return { html, email }\n})() }}"
+            }
+          ]
+        },
+        "includeOtherFields": false,
+        "mode": "manual",
+        "options": {}
+      },
+      "notes": "Um único dashboard por snapshot (sem variação por perfil). O mesmo HTML vira o corpo do e-mail e o PDF anexo; destinatários = todos os ativos com e-mail.",
+      "executeOnce": true
+    },
+    {
+      "id": "4de1db10-1720-4caf-9920-f69e6af86634",
+      "name": "Ler fontes ativas",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        448,
+        272
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {
+          "largeNumbersOutput": "numbers",
+          "queryReplacement": "={{ [ ($json.fonteNome || '').trim() ] }}"
+        },
+        "query": "SELECT id, nome, tipo_auth AS \"tipoAuth\", base_url AS \"baseUrl\", endpoint_teste AS \"endpointTeste\",\n       owner_email AS \"ownerEmail\", status, expira_em::text AS \"expiraEm\"\nFROM auditoria.fontes_sistema\nWHERE ativo\n  AND ($1::text = '' OR nome ILIKE $1::text)   -- vazio = todas as fontes ativas\nORDER BY id;"
+      },
+      "notes": "Fontes ativas (ou só a informada em fonteNome)."
+    },
+    {
+      "id": "e3b804d2-fde2-4ddf-ba71-a7f390e71f73",
+      "name": "Atualizar fonte",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1248,
+        256
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {
+          "largeNumbersOutput": "numbers",
+          "queryReplacement": "={{ [ $json.fonteId, $json.statusNovo, $json.resultado, $json.httpStatus, $json.motivo ] }}"
+        },
+        "query": "UPDATE auditoria.fontes_sistema\nSET status = $2, ultimo_resultado = $3, http_status = $4::int, motivo = $5, validado_em = now()\nWHERE id = $1::bigint\nRETURNING id;"
+      },
+      "notes": "INDETERMINADA não muda status (statusNovo já vem com o status anterior)."
+    },
+    {
+      "id": "66af63c4-1331-445f-a166-ce6280e3e7c1",
+      "name": "Registrar validação",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1472,
+        256
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {
+          "largeNumbersOutput": "numbers",
+          "queryReplacement": "={{ [ $('Classificar resultado').item.json.fonteId, $('Classificar resultado').item.json.nome, $('Classificar resultado').item.json.resultado, $('Classificar resultado').item.json.statusAnterior, $('Classificar resultado').item.json.statusNovo, $('Classificar resultado').item.json.httpStatus, $('Classificar resultado').item.json.motivo ] }}"
+        },
+        "query": "INSERT INTO auditoria.validacao_log (fonte_id, fonte_nome, resultado, status_anterior, status_novo, http_status, motivo)\nVALUES ($1::bigint, $2, $3, $4, $5, $6::int, $7)\nRETURNING id;"
+      }
+    },
+    {
+      "id": "9a078512-a1f8-4af4-8ebd-89f3ea08905e",
+      "name": "Retornar fontes aptas",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1824,
+        432
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {
+          "largeNumbersOutput": "numbers"
+        },
+        "query": "SELECT id, nome, tipo_auth AS \"tipoAuth\", base_url AS \"baseUrl\"\nFROM auditoria.fontes_sistema\nWHERE ativo AND status = 'VALIDA'\nORDER BY id;"
+      },
+      "notes": "Fontes aptas para a extração. alwaysOutputData: sem fonte apta o pipeline segue e termina como SEM_FONTES.",
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "id": "6d264723-fceb-43c4-a632-f01259675a8d",
+      "name": "Consultar KPIs (SQL)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        672,
+        1216
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {
+          "largeNumbersOutput": "numbers",
+          "queryReplacement": "={{ [ $('Definir período').first().json.periodoInicio, $('Definir período').first().json.periodoFim ] }}"
+        },
+        "query": "-- Agregação das inspeções do período ($1 = início, $2 = fim) e do período anterior de mesma duração.\n-- Números saem daqui; o nó \"Calcular KPIs\" só formata em pt-BR e monta a lista de números permitidos para a IA.\nWITH p AS (\n  SELECT $1::date AS ini, $2::date AS fim, ($2::date - $1::date + 1) AS dias\n),\nvalidos AS (\n  SELECT * FROM auditoria.vw_inspecoes\n  WHERE data_inspecao IS NOT NULL AND pranchas_analisadas IS NOT NULL AND pranchas_avaria IS NOT NULL\n),\natual AS (SELECT v.* FROM validos v CROSS JOIN p WHERE v.data_inspecao BETWEEN p.ini AND p.fim),\nanterior AS (SELECT v.* FROM validos v CROSS JOIN p WHERE v.data_inspecao BETWEEN p.ini - p.dias AND p.ini - 1),\ntot AS (\n  SELECT count(*)::int AS inspecoes, COALESCE(sum(pranchas_analisadas), 0) AS analisadas, COALESCE(sum(pranchas_avaria), 0) AS avaria,\n         COALESCE(sum(indenizacao_bruta), 0) AS bruta, COALESCE(sum(desconto), 0) AS desconto\n  FROM atual\n),\ntot_ant AS (\n  SELECT count(*)::int AS inspecoes, COALESCE(sum(pranchas_analisadas), 0) AS analisadas, COALESCE(sum(pranchas_avaria), 0) AS avaria,\n         COALESCE(sum(indenizacao_bruta), 0) AS bruta, COALESCE(sum(desconto), 0) AS desconto\n  FROM anterior\n),\nindice_geral AS (SELECT CASE WHEN analisadas > 0 THEN avaria / analisadas * 100 ELSE 0 END AS v FROM tot),\ngrupos AS (\n  SELECT 'contrato' AS dimensao, contrato AS chave, count(*)::int AS inspecoes, sum(pranchas_analisadas) AS analisadas,\n         sum(pranchas_avaria) AS avaria, sum(indenizacao_bruta) AS bruta, sum(desconto) AS desconto\n  FROM atual GROUP BY contrato\n  UNION ALL\n  SELECT 'fornecedor', fornecedor, count(*)::int, sum(pranchas_analisadas), sum(pranchas_avaria), sum(indenizacao_bruta), sum(desconto)\n  FROM atual GROUP BY fornecedor\n),\ngrupos_ind AS (\n  SELECT g.*, CASE WHEN g.analisadas > 0 THEN g.avaria / g.analisadas * 100 ELSE 0 END AS indice FROM grupos g\n),\nsemanas AS (\n  SELECT date_trunc('week', data_inspecao)::date AS semana, count(*)::int AS inspecoes, sum(pranchas_analisadas) AS analisadas,\n         sum(pranchas_avaria) AS avaria, sum(indenizacao_bruta) AS bruta, sum(desconto) AS desconto\n  FROM atual GROUP BY 1\n)\nSELECT\n  (SELECT dias FROM p) AS dias,\n  (SELECT count(*) FROM auditoria.vw_inspecoes) - (SELECT count(*) FROM validos) AS ignorados,\n  (SELECT row_to_json(tot) FROM tot) AS totais,\n  (SELECT row_to_json(tot_ant) FROM tot_ant) AS anterior,\n  (SELECT COALESCE(json_agg(json_build_object('chave', chave, 'inspecoes', inspecoes, 'analisadas', analisadas, 'avaria', avaria,\n            'bruta', bruta, 'desconto', desconto,\n            -- Alerta: volume relevante (>= 50 pranchas) e índice >= 2x o índice geral do período\n            'alerta', analisadas >= 50 AND (SELECT v FROM indice_geral) > 0 AND indice >= 2 * (SELECT v FROM indice_geral))\n          ORDER BY indice DESC, chave), '[]'::json)\n   FROM grupos_ind WHERE dimensao = 'contrato') AS por_contrato,\n  (SELECT COALESCE(json_agg(json_build_object('chave', chave, 'inspecoes', inspecoes, 'analisadas', analisadas, 'avaria', avaria,\n            'bruta', bruta, 'desconto', desconto) ORDER BY indice DESC, chave), '[]'::json)\n   FROM grupos_ind WHERE dimensao = 'fornecedor') AS por_fornecedor,\n  (SELECT COALESCE(json_agg(json_build_object('semana', to_char(semana, 'DD/MM'), 'inspecoes', inspecoes, 'analisadas', analisadas,\n            'avaria', avaria, 'bruta', bruta, 'desconto', desconto) ORDER BY semana), '[]'::json)\n   FROM semanas) AS serie_semanal;"
+      },
+      "notes": "Agregação no banco (mart auditoria.vw_inspecoes): período, período anterior, contrato, fornecedor, semana e alertas.",
+      "executeOnce": true
+    },
+    {
+      "id": "5a3cd289-eab7-4365-973e-3349a5532d8f",
+      "name": "Salvar snapshot",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2016,
+        1216
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {
+          "largeNumbersOutput": "numbers",
+          "queryReplacement": "={{ [ $json.entidade, $json.periodoInicio, $json.periodoFim, $json.semDados, JSON.stringify($json.kpis), $json.narrativa ?? '', $json.narrativaValida, $json.motivoNarrativa, $json.modelo ] }}"
+        },
+        "query": "INSERT INTO auditoria.kpi_snapshots\n  (entidade, periodo_inicio, periodo_fim, sem_dados, kpis, narrativa, narrativa_valida, motivo_narrativa, modelo)\nVALUES ($1, $2::date, $3::date, $4::boolean, $5::jsonb, $6, $7::boolean, $8, $9)\nRETURNING id;"
+      },
+      "notes": "Histórico de cada cálculo: permite auditar o que foi enviado em cada relatório."
+    },
+    {
+      "id": "f46f9832-5e8f-4834-bfa7-f42ef237d2d1",
+      "name": "Ler snapshot",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2720,
+        1296
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {
+          "largeNumbersOutput": "numbers",
+          "queryReplacement": "={{ [ Number($json.snapshotId) || 0 ] }}"
+        },
+        "query": "SELECT id, entidade, periodo_inicio::text AS \"periodoInicio\", periodo_fim::text AS \"periodoFim\",\n       sem_dados AS \"semDados\", kpis::text AS kpis_object, narrativa,\n       narrativa_valida AS \"narrativaValida\", motivo_narrativa AS \"motivoNarrativa\"\nFROM auditoria.kpi_snapshots\nWHERE $1::bigint = 0 OR id = $1::bigint   -- 0 = snapshot mais recente\nORDER BY id DESC\nLIMIT 1;"
+      },
+      "notes": "snapshotId informado = esse snapshot; vazio = o mais recente."
+    },
+    {
+      "id": "784f0ecd-dde1-4345-9e55-2437c1203aed",
+      "name": "Ler destinatários",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2944,
+        1296
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {
+          "largeNumbersOutput": "numbers"
+        },
+        "query": "SELECT id, nome, email, perfil, contratos_escopo AS \"contratosEscopo\", canal_email AS \"canalEmail\"\nFROM auditoria.destinatarios\nWHERE ativo AND canal_email AND COALESCE(btrim(email), '') <> ''\nORDER BY id;"
+      },
+      "executeOnce": true
+    },
+    {
+      "id": "3ecf2b38-315a-4488-8c9d-350339f8469e",
+      "name": "Ainda não enviado?",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3392,
+        1284
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {
+          "largeNumbersOutput": "numbers",
+          "queryReplacement": "={{ [ $('Ler snapshot').first().json.id ] }}"
+        },
+        "query": "SELECT 1 AS pendente\nWHERE NOT EXISTS (\n  SELECT 1 FROM auditoria.envio_log\n  WHERE snapshot_id = $1::bigint AND canal = 'email' AND status = 'ENVIADO'\n);"
+      },
+      "notes": "Idempotência: 0 linhas (já ENVIADO para este snapshot) encerra o fluxo; FALHA é reenviada.",
+      "executeOnce": true
+    },
+    {
+      "id": "4b09a30e-3da6-4720-bdc1-4a3d586cb064",
+      "name": "Registrar envio",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4288,
+        1284
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {
+          "largeNumbersOutput": "numbers",
+          "queryReplacement": "={{ [ $('Ler snapshot').first().json.id, $('Montar dashboard').first().json.qtdDestinatarios, (($json.accepted?.length || $json.messageId || $json.messages?.[0]?.id) && !$json.error ? 'ENVIADO' : 'FALHA'), (() => {\n  // Sucesso exige confirmação do provedor; sem ela é falha (ex.: nó sem credencial devolve o item sem campo error)\n  const e = $json.error\n  const para = 'Para: ' + ($('Montar dashboard').first().json.emails || '(nenhum destinatário)')\n  if (e) return (String(typeof e === 'string' ? e : (e.message ?? JSON.stringify(e))) + ' | ' + para).slice(0, 500)\n  return (($json.messageId ?? 'Sem confirmação do provedor: verificar credencial SMTP e a execução') + ' | ' + para).slice(0, 500)\n})() ] }}"
+        },
+        "query": "INSERT INTO auditoria.envio_log (snapshot_id, qtd_destinatarios, canal, status, detalhe)\nVALUES ($1::bigint, $2::int, 'email', $3, $4)\nRETURNING id, snapshot_id AS \"snapshotId\", qtd_destinatarios AS \"qtdDestinatarios\", canal, status, detalhe;"
+      },
+      "notes": "Trilha do envio: ENVIADO só com confirmação do provedor; FALHA com o motivo."
+    },
+    {
+      "id": "9b326f33-2466-418f-984b-2b630621165c",
+      "name": "Buscar erro igual recente",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        672,
+        1696
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {
+          "largeNumbersOutput": "numbers",
+          "queryReplacement": "={{ [ [$('Erro em workflow').first().json.workflow?.id, $('Erro em workflow').first().json.execution?.lastNodeExecuted, String($('Erro em workflow').first().json.execution?.error?.message ?? '').slice(0, 120)].join('|') ] }}"
+        },
+        "query": "SELECT id\nFROM auditoria.erro_log\nWHERE assinatura = $1 AND created_at >= now() - interval '60 minutes'\nORDER BY id DESC\nLIMIT 1;"
+      },
+      "notes": "Mesmo workflow + nó + mensagem na última hora = não manda outro e-mail.",
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "id": "63046d94-336b-4f34-932e-04a17d456976",
+      "name": "Registrar erro",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        848,
+        1696
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {
+          "largeNumbersOutput": "numbers",
+          "queryReplacement": "={{ [ $('Erro em workflow').first().json.workflow?.id ?? '', $('Erro em workflow').first().json.workflow?.name ?? '', String($('Erro em workflow').first().json.execution?.id ?? ''), $('Erro em workflow').first().json.execution?.url ?? '', $('Erro em workflow').first().json.execution?.lastNodeExecuted ?? '', String($('Erro em workflow').first().json.execution?.error?.message ?? '').slice(0, 500), String($('Erro em workflow').first().json.execution?.error?.description ?? '').slice(0, 500), $('Erro em workflow').first().json.execution?.mode ?? '', [$('Erro em workflow').first().json.workflow?.id, $('Erro em workflow').first().json.execution?.lastNodeExecuted, String($('Erro em workflow').first().json.execution?.error?.message ?? '').slice(0, 120)].join('|'), !$('Buscar erro igual recente').first().json.id ] }}"
+        },
+        "query": "INSERT INTO auditoria.erro_log\n  (workflow_id, workflow_nome, execucao_id, execucao_url, no_falhou, mensagem, descricao, modo, assinatura, alertado)\nVALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::boolean)\nRETURNING id, alertado;"
+      },
+      "notes": "Gravado antes do e-mail: se o alerta falhar, o erro continua registrado.",
+      "executeOnce": true
+    },
+    {
+      "id": "a139a6d9-0bd4-4b6a-8585-d071cb9c2315",
+      "name": "Listar endpoints ativos",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2400,
+        512
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {
+          "largeNumbersOutput": "numbers"
+        },
+        "query": "SELECT id, entidade, fonte_nome AS \"fonteNome\"\nFROM auditoria.endpoints_extracao\nWHERE ativo\nORDER BY id;"
+      },
+      "notes": "Todos os endpoints ativos vão para o WF20; endpoint de fonte não VALIDA vira PULADA com o motivo.",
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "id": "0fdd65f6-2974-45c6-82c1-924b2c2db128",
+      "name": "Registrar execução do pipeline",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2944,
+        1904
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {
+          "largeNumbersOutput": "numbers",
+          "queryReplacement": "={{ [ $json.origem, $json.periodoInicio ?? '', $json.periodoFim ?? '', $json.fontesAptas, $json.endpoints, $json.cargasAprovadas, $json.cargasComProblema, $json.snapshotId ?? '', $json.narrativaValida, $json.enviosOk, $json.enviosFalha, $json.status, $json.resumo ] }}"
+        },
+        "query": "INSERT INTO auditoria.pipeline_log\n  (origem, periodo_inicio, periodo_fim, fontes_aptas, endpoints, cargas_aprovadas, cargas_com_problema,\n   snapshot_id, narrativa_valida, envios_ok, envios_falha, status, resumo)\nVALUES ($1, NULLIF($2::text, '')::date, NULLIF($3::text, '')::date, $4::int, $5::int, $6::int, $7::int,\n        NULLIF($8::text, '')::bigint, $9::boolean, $10::int, $11::int, $12, $13)\nRETURNING id;"
+      }
+    }
+  ],
+  "connections": {
+    "Agendamento diário 06:00": {
+      "main": [
+        [
+          {
+            "node": "Normalizar entrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rodar pipeline manualmente": {
+      "main": [
+        [
+          {
+            "node": "Normalizar entrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rotear por tipo de auth": {
+      "main": [
+        [
+          {
+            "node": "Testar Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Testar API (Header Auth)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Classificar resultado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Testar Claude API": {
+      "main": [
+        [
+          {
+            "node": "Classificar resultado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Testar API (Header Auth)": {
+      "main": [
+        [
+          {
+            "node": "Classificar resultado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Precisa notificar?": {
+      "main": [
+        [
+          {
+            "node": "Avisar dono da chave",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calcular KPIs": {
+      "main": [
+        [
+          {
+            "node": "Há dados no período?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Há dados no período?": {
+      "main": [
+        [
+          {
+            "node": "Gerar narrativa",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Montar pacote",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gerar narrativa": {
+      "main": [
+        [
+          {
+            "node": "Validar narrativa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar narrativa": {
+      "main": [
+        [
+          {
+            "node": "Montar pacote",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extrair, DQ e carregar (por endpoint)": {
+      "main": [
+        [
+          {
+            "node": "Definir período",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gerar PDF": {
+      "main": [
+        [
+          {
+            "node": "Baixar PDF",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registrar envio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Baixar PDF": {
+      "main": [
+        [
+          {
+            "node": "Enviar e-mail",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registrar envio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retornar pacote": {
+      "main": [
+        [
+          {
+            "node": "Consolidar execução",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Ler snapshot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Alertar agora?": {
+      "main": [
+        [
+          {
+            "node": "Alertar por e-mail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler fontes ativas": {
+      "main": [
+        [
+          {
+            "node": "Rotear por tipo de auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classificar resultado": {
+      "main": [
+        [
+          {
+            "node": "Atualizar fonte",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Atualizar fonte": {
+      "main": [
+        [
+          {
+            "node": "Registrar validação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar validação": {
+      "main": [
+        [
+          {
+            "node": "Precisa notificar?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Retornar fontes aptas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar entrada": {
+      "main": [
+        [
+          {
+            "node": "Ler fontes ativas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retornar fontes aptas": {
+      "main": [
+        [
+          {
+            "node": "Listar endpoints ativos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Listar endpoints ativos": {
+      "main": [
+        [
+          {
+            "node": "Extrair, DQ e carregar (por endpoint)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Definir período": {
+      "main": [
+        [
+          {
+            "node": "Consultar KPIs (SQL)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar KPIs (SQL)": {
+      "main": [
+        [
+          {
+            "node": "Calcular KPIs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar pacote": {
+      "main": [
+        [
+          {
+            "node": "Salvar snapshot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar snapshot": {
+      "main": [
+        [
+          {
+            "node": "Retornar pacote",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler snapshot": {
+      "main": [
+        [
+          {
+            "node": "Ler destinatários",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar e-mail": {
+      "main": [
+        [
+          {
+            "node": "Registrar envio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registrar envio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consolidar execução": {
+      "main": [
+        [
+          {
+            "node": "Registrar execução do pipeline",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Erro em workflow": {
+      "main": [
+        [
+          {
+            "node": "Buscar erro igual recente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar erro igual recente": {
+      "main": [
+        [
+          {
+            "node": "Registrar erro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar erro": {
+      "main": [
+        [
+          {
+            "node": "Alertar agora?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler destinatários": {
+      "main": [
+        [
+          {
+            "node": "Montar dashboard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar dashboard": {
+      "main": [
+        [
+          {
+            "node": "Ainda não enviado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ainda não enviado?": {
+      "main": [
+        [
+          {
+            "node": "Gerar PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo",
+    "saveDataErrorExecution": "all",
+    "binaryMode": "separate"
+  },
+  "pinData": {},
+  "tags": [
+    {
+      "name": "auditoria"
+    },
+    {
+      "name": "orquestrador"
+    }
+  ],
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "description": "Pipeline de auditoria em canvas único: validação de chaves, extração/DQ (WF20 por endpoint), KPIs + narrativa Claude, relatório por perfil (e-mail/WhatsApp), pipeline_log e tratamento de erro."
+}
